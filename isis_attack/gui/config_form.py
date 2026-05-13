@@ -1,7 +1,7 @@
 """动态配置表单 — 根据攻击类型动态生成参数字段。"""
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 from typing import Any
 from .styles import FONT_LABEL, FONT_ENTRY, PAD_FORM, PAD_OUTER, SECTION_GAP
 
@@ -219,6 +219,62 @@ class ConfigForm(tk.Frame):
     def format_preview(self) -> str:
         return _format_isis_preview(self)
 
+    def export_pcap(self) -> bool:
+        """导出当前构造的报文为 pcap 文件。"""
+        path = filedialog.asksaveasfilename(
+            defaultextension=".pcap",
+            filetypes=[("pcap files", "*.pcap"), ("All files", "*.*")],
+            title="导出构造的报文为 pcap",
+        )
+        if not path:
+            return False
+        try:
+            from scapy.utils import wrpcap
+            raw = _build_raw_isis_packet(self)
+            if raw:
+                wrpcap(path, raw)
+                return True
+        except Exception as e:
+            messagebox.showerror("导出失败", str(e))
+        return False
+
+    def auto_fill_from_packet(self, pkt: dict):
+        """从捕获的 ISIS 报文字段自动填充表单参数。"""
+        def _set(key, value):
+            if key in self._widgets and value is not None and value != "":
+                try:
+                    w = self._widgets[key]
+                    if hasattr(w, "set"):
+                        w.set(str(value))
+                    elif hasattr(w, "delete"):
+                        w.delete(0, tk.END)
+                        w.insert(0, str(value))
+                except Exception:
+                    pass
+        _set("sys_id", pkt.get("sys_id"))
+        _set("target", pkt.get("dst_mac"))
+        if "area_addr" in pkt:
+            _set("area_addr", pkt["area_addr"])
+        if "metric" in pkt:
+            _set("metric", pkt["metric"])
+        if "sequence" in pkt:
+            _set("sequence", f"0x{pkt['sequence']:08X}")
+        if "lifetime" in pkt:
+            _set("remaining_lifetime", pkt["lifetime"])
+        if "ip_reach" in pkt:
+            ip_reach = pkt["ip_reach"]
+            if "/" in str(ip_reach):
+                net, mask = str(ip_reach).split("/", 1)
+                _set("network_addr", net)
+                # Convert CIDR to mask
+                try:
+                    bits = int(mask)
+                    mask_int = (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF
+                    mask_str = ".".join(str((mask_int >> (8 * n)) & 0xFF) for n in range(3, -1, -1))
+                    _set("network_mask", mask_str)
+                except ValueError:
+                    pass
+
     # ------------------------------------------------------------------
     # Build helpers
     # ------------------------------------------------------------------
@@ -353,6 +409,48 @@ def _safe_get(widgets: dict, key: str, default=""):
         return str(v) if v else default
 
 
+def _build_raw_isis_packet(form: "ConfigForm") -> bytes | None:
+    """根据当前表单参数构造一个 ISIS 报文（用于导出 pcap）。"""
+    w = form._widgets
+    attack = form._attack_name or ""
+    try:
+        from isis_attack.core.packet import build_iih_packet, build_lsp_with_tlvs
+        from isis_attack.network.adapter import get_local_mac
+        iface = _safe_get(w, "iface", "eth0")
+        src_mac = get_local_mac(iface)
+        sys_id = _safe_get(w, "sys_id", "1921.6800.1001")
+        area = _safe_get(w, "area_addr", "49.0001")
+        level = int(_safe_get(w, "level", "1"))
+        auth_type = {"none": 0, "plain": 1, "md5": 2}.get(_safe_get(w, "auth_type", "none"), 0)
+        auth_key = _safe_get(w, "auth_key", "").encode()
+
+        if attack in ("iih-inject", "adjacency-break", "dis-hijack"):
+            return build_iih_packet(
+                sys_id=sys_id, area_addr=area, src_mac=src_mac, level=level,
+                priority=int(_safe_get(w, "priority", "64")),
+                hold_timer=int(_safe_get(w, "hold_timer", "30")),
+                hello_interval=int(_safe_get(w, "hello_interval", "10")),
+                auth_type=auth_type, auth_key=auth_key,
+            )
+        elif attack in ("route-inject", "max-seq", "purge-lsp", "fight-back", "overload-bit"):
+            lsp_id = _safe_get(w, "lsp_id", "") or f"{sys_id}.00-00"
+            seq = int(_safe_get(w, "sequence", "1"), 0)
+            lifetime = int(_safe_get(w, "remaining_lifetime", "1200"))
+            metric = int(_safe_get(w, "metric", "10"))
+            net = _safe_get(w, "network_addr", "10.0.0.0")
+            mask = _safe_get(w, "network_mask", "255.255.255.0")
+            ol = bool(_safe_get(w, "overload_bit", False))
+            return build_lsp_with_tlvs(
+                sys_id=sys_id, lsp_id=lsp_id, src_mac=src_mac, level=level,
+                sequence=seq, remaining_lifetime=lifetime,
+                overload_bit=ol, metric=metric, network_addr=net,
+                network_mask=mask, area_addr=area,
+            )
+    except Exception:
+        import traceback; traceback.print_exc()
+    return None
+
+
 def _format_isis_preview(form: "ConfigForm") -> str:
     w = form._widgets
     attack = form._attack_name or ""
@@ -461,6 +559,8 @@ class PacketPreview(ttk.LabelFrame):
 
         bar = ttk.Frame(self)
         bar.pack(fill=tk.X, pady=(0, 4))
+        if export_fn:
+            ttk.Button(bar, text="导出 pcap", command=self._export).pack(side=tk.LEFT)
         ttk.Button(bar, text="刷新预览", command=self.refresh).pack(side=tk.RIGHT)
 
         self._text = tk.Text(self, font=("Consolas", 9), width=42, height=24,
@@ -470,6 +570,10 @@ class PacketPreview(ttk.LabelFrame):
                              wrap=tk.NONE)
         self._text.pack(fill=tk.BOTH, expand=True)
         self.refresh()
+
+    def _export(self):
+        if self._export_fn:
+            self._export_fn()
 
     def refresh(self):
         try:

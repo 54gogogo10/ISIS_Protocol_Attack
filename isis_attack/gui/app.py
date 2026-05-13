@@ -30,6 +30,7 @@ class MainWindow:
         self._stop_event = threading.Event()
         self._log_queue = queue.Queue()
         self._current_attack: str | None = None
+        self._sniffer = None
 
         self._log_queue.put(("SYSTEM", "GUI 操作面板已启动"))
 
@@ -83,6 +84,13 @@ class MainWindow:
         self._stop_btn = ttk.Button(btn_frame, text="■ 停止", command=self._on_stop, state=tk.DISABLED)
         self._stop_btn.pack(side=tk.LEFT, padx=4)
 
+        ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(btn_frame, text="嗅探报文", command=self._on_sniff).pack(side=tk.LEFT, padx=4)
+        self._stop_sniff_btn = ttk.Button(btn_frame, text="⏹ 停止嗅探",
+                                          command=self._on_stop_sniff, state=tk.DISABLED)
+        self._stop_sniff_btn.pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_frame, text="导入 pcap", command=self._on_import_pcap).pack(side=tk.LEFT, padx=4)
+        ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
         ttk.Button(btn_frame, text="保存配置", command=self._on_save_config).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="加载配置", command=self._on_load_config).pack(side=tk.LEFT, padx=4)
 
@@ -109,7 +117,8 @@ class MainWindow:
         # 右列: 报文预览
         from .config_form import PacketPreview
         self._preview = PacketPreview(right_paned,
-                                      lambda: self._form.format_preview())
+                                      lambda: self._form.format_preview(),
+                                      export_fn=lambda: self._form.export_pcap())
         right_paned.add(self._preview, weight=1)
 
         # -- 底部状态栏 --
@@ -208,8 +217,83 @@ class MainWindow:
         self._log_queue.put(("INFO", f"配置已加载: {path}"))
 
     def _on_close(self):
+        if self._sniffer is not None:
+            self._sniffer.stop()
+            self._sniffer = None
         self._stop_event.set()
         self.root.destroy()
+
+    # ------------------------------------------------------------------
+    # 嗅探 / pcap 导入
+    # ------------------------------------------------------------------
+
+    def _on_sniff(self):
+        if self._sniffer is not None:
+            return
+        cfg = self._form.get_config_dict()
+        iface = str(cfg.get("iface", "eth0"))
+        dur = int(cfg.get("sniff_duration", 30))
+        self._log_queue.put(("SYSTEM", f"开始在 {iface} 嗅探 ISIS 报文 (最多 {dur}s)..."))
+        self._stop_sniff_btn.config(state=tk.NORMAL)
+        self._progress.start()
+        try:
+            from .pcap_tools import sniff_isis_async
+            self._sniffer = sniff_isis_async(iface, timeout=dur)
+        except Exception as e:
+            self._log_queue.put(("ERROR", f"启动嗅探失败: {e}"))
+            self._sniff_done()
+            return
+        self._poll_sniff_progress()
+
+    def _poll_sniff_progress(self):
+        if self._sniffer is None:
+            return
+        live = len(self._sniffer.results)
+        self._count_var.set(f"已捕获: {live}")
+        if self._sniffer.running:
+            self.root.after(200, self._poll_sniff_progress)
+        else:
+            self._sniff_done()
+
+    def _on_stop_sniff(self):
+        if self._sniffer is not None:
+            self._log_queue.put(("SYSTEM", "用户手动停止嗅探"))
+            self._sniffer.stop()
+            self._sniff_done()
+
+    def _sniff_done(self):
+        self._stop_sniff_btn.config(state=tk.DISABLED)
+        self._progress.stop()
+        live = len(self._sniffer.results) if self._sniffer else 0
+        if self._sniffer is not None:
+            from .pcap_tools import parse_sniff_results, PacketBrowser
+            packets = parse_sniff_results(self._sniffer)
+            self._sniffer = None
+            if packets:
+                self._log_queue.put(("INFO", f"嗅探完成，捕获 {len(packets)} 个 ISIS 报文"))
+                self.root.after(100, lambda: PacketBrowser(
+                    self.root, packets,
+                    auto_fill_callback=self._form.auto_fill_from_packet))
+            else:
+                self._log_queue.put(("WARN", "未捕获到 ISIS 报文，请检查接口和网络环境"))
+        self._count_var.set("已发包: 0")
+
+    def _on_import_pcap(self):
+        from .pcap_tools import read_pcap, PacketBrowser
+        path = filedialog.askopenfilename(
+            filetypes=[("pcap files", "*.pcap *.pcapng"), ("All files", "*.*")],
+            title="导入 pcap 文件",
+        )
+        if not path:
+            return
+        packets = read_pcap(path)
+        if packets:
+            self._log_queue.put(("INFO", f"导入 {len(packets)} 个 ISIS 报文 from {path}"))
+            PacketBrowser(self.root, packets,
+                         auto_fill_callback=self._form.auto_fill_from_packet)
+        else:
+            self._log_queue.put(("WARN", f"文件中未找到 ISIS 报文: {path}"))
+            messagebox.showinfo("导入结果", "该文件中未找到 ISIS 报文。")
 
     # ------------------------------------------------------------------
     # 状态切换

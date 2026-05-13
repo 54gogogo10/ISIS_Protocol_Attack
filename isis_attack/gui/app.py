@@ -6,59 +6,84 @@ from isis_attack.gui.config_form import ConfigFormPanel
 from isis_attack.gui.log_panel import LogPanel
 from isis_attack.cli.commands import ATTACK_REGISTRY
 
+
 class ISISAttackApp:
     def __init__(self, root):
         self.root = root
         root.title("ISIS Protocol Attack Simulator")
         root.geometry("1100x720")
         root.configure(bg=BG)
-        root.resizable(True, True)
-        root.minsize(900, 500)
+        root.minsize(800, 500)
 
         self._attack_thread = None
         self._selected_attack = None
 
         self._build_toolbar()
-        self._build_layout()
+        self._build_body()
+        self._build_log()
+
+    # ------------------------------------------------------------------
+    # Toolbar
+    # ------------------------------------------------------------------
 
     def _build_toolbar(self):
         bar = ttk.Frame(self.root)
         bar.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(5, 0))
 
-        self._attack_label = ttk.Label(bar, text="Select an attack →", font=FONT)
+        self._attack_label = ttk.Label(bar, text="Select an attack from the tree →", font=FONT)
         self._attack_label.pack(side=tk.LEFT, padx=5)
-
-        self._run_btn = ttk.Button(bar, text="▶ Run", command=self._on_run, state=tk.DISABLED)
-        self._run_btn.pack(side=tk.RIGHT, padx=3)
 
         self._stop_btn = ttk.Button(bar, text="■ Stop", command=self._on_stop, state=tk.DISABLED)
         self._stop_btn.pack(side=tk.RIGHT, padx=3)
 
+        self._run_btn = ttk.Button(bar, text="▶ Run", command=self._on_run, state=tk.DISABLED)
+        self._run_btn.pack(side=tk.RIGHT, padx=3)
+
         ttk.Separator(self.root, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=5, pady=2)
 
-    def _build_layout(self):
+    # ------------------------------------------------------------------
+    # Body: left tree + right form
+    # ------------------------------------------------------------------
+
+    def _build_body(self):
         body = ttk.Frame(self.root)
-        body.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5)
+        body.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=(0, 3))
 
-        paned = ttk.PanedWindow(body, orient=tk.HORIZONTAL)
-        paned.pack(fill=tk.BOTH, expand=True)
+        # Left panel — attack tree (fixed width)
+        left = ttk.Frame(body, width=280)
+        left.pack(side=tk.LEFT, fill=tk.Y)
+        left.pack_propagate(False)
 
-        left = ttk.Frame(paned, width=260)
-        paned.add(left, weight=0)
         self.tree = AttackTreePanel(left, on_select=self._on_attack_select)
         self.tree.pack(fill=tk.BOTH, expand=True)
 
-        right = ttk.Frame(paned)
-        paned.add(right, weight=1)
+        # Separator
+        ttk.Separator(body, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=2)
+
+        # Right panel — config form (expands)
+        right = ttk.Frame(body)
+        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
         self.form = ConfigFormPanel(right)
         self.form.pack(fill=tk.BOTH, expand=True)
 
-        bottom = ttk.Frame(self.root, height=180)
-        bottom.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=5)
+    # ------------------------------------------------------------------
+    # Log panel (bottom)
+    # ------------------------------------------------------------------
+
+    def _build_log(self):
+        bottom = ttk.Frame(self.root, height=200)
+        bottom.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=(0, 5))
         bottom.pack_propagate(False)
+
+        ttk.Separator(bottom, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 2))
 
         self.log = LogPanel(bottom)
         self.log.pack(fill=tk.BOTH, expand=True)
+
+    # ------------------------------------------------------------------
+    # Callbacks
+    # ------------------------------------------------------------------
 
     def _on_attack_select(self, attack_name):
         self._selected_attack = attack_name
@@ -75,12 +100,13 @@ class ISISAttackApp:
 
         kwargs = self.form.get_values()
         attack_name = self._selected_attack
-        self.log.info(f"Starting {attack_name} with {kwargs}")
+        self.log.info(f"Starting {attack_name}...")
 
         import threading
         from isis_attack.config.config import build_config
 
         attack_cls, config_cls = ATTACK_REGISTRY[attack_name]
+
         def _run():
             try:
                 config = build_config(attack_name, kwargs)

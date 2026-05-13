@@ -1,43 +1,34 @@
+"""日志面板 — 彩色日志输出，支持队列缓冲。"""
+
 import tkinter as tk
 from tkinter import ttk
-import queue
-from isis_attack.gui.styles import BG, FG
+from .styles import BG_LOG, LOG_TAGS, FONT_LOG
 
-class LogPanel(ttk.Frame):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.text = tk.Text(self, wrap=tk.WORD, bg=BG, fg=FG,
-                            font=("Consolas", 9), state=tk.DISABLED,
-                            insertbackground=FG, relief=tk.FLAT,
-                            borderwidth=2, highlightthickness=0)
-        scroll = ttk.Scrollbar(self, command=self.text.yview)
-        self.text.configure(yscrollcommand=scroll.set)
-        self.text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+class LogPanel(tk.Frame):
+    def __init__(self, parent, **kw):
+        super().__init__(parent, bg=BG_LOG, **kw)
+
+        self._text = tk.Text(self, wrap=tk.WORD, bg=BG_LOG, fg="#d4d4d4",
+                             font=FONT_LOG, state=tk.DISABLED,
+                             insertbackground="#ffffff",
+                             relief=tk.FLAT, borderwidth=2, highlightthickness=0)
+        scroll = ttk.Scrollbar(self, command=self._text.yview)
+        self._text.configure(yscrollcommand=scroll.set)
+        self._text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self._queue = queue.Queue()
-        self._process_queue()
 
-    def info(self, msg):
-        self._queue.put(("info", msg))
+    def write(self, level: str, message: str):
+        """写入一条日志 — 线程安全。"""
+        color = LOG_TAGS.get(level, LOG_TAGS["INFO"])
+        self._text.after(0, self._append, level, message, color)
 
-    def error(self, msg):
-        self._queue.put(("error", msg))
-
-    def success(self, msg):
-        self._queue.put(("success", msg))
-
-    def _process_queue(self):
-        while True:
-            try:
-                level, msg = self._queue.get_nowait()
-                self._write(level, msg)
-            except queue.Empty:
-                break
-        self.after(100, self._process_queue)
-
-    def _write(self, level, msg):
-        color = {"info": "#89b4fa", "error": "#f38ba8", "success": "#a6e3a1"}.get(level, FG)
-        self.text.configure(state=tk.NORMAL)
-        self.text.insert(tk.END, msg + "\n")
-        self.text.see(tk.END)
-        self.text.configure(state=tk.DISABLED)
+    def _append(self, level, message, color):
+        try:
+            self._text.configure(state=tk.NORMAL)
+            self._text.insert(tk.END, f"[{level}] {message}\n", (level,))
+            self._text.tag_configure(level, foreground=color)
+            self._text.see(tk.END)
+            self._text.configure(state=tk.DISABLED)
+        except Exception:
+            pass

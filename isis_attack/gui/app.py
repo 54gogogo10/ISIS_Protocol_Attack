@@ -1,138 +1,216 @@
+"""GUI 主窗口 — IS-IS 协议攻击模拟器操作面板。"""
+
+import queue
+import threading
 import tkinter as tk
-from tkinter import ttk
-from isis_attack.gui.styles import BG, FG, FONT, FONT_SM
-from isis_attack.gui.attack_tree import AttackTreePanel
-from isis_attack.gui.config_form import ConfigFormPanel
-from isis_attack.gui.log_panel import LogPanel
-from isis_attack.cli.commands import ATTACK_REGISTRY
+from tkinter import ttk, filedialog, messagebox
+
+import yaml
+
+from .styles import (
+    BG_MAIN, FONT_TITLE, FONT_STATUS,
+    PAD_OUTER, PAD_INNER, WINDOW_WIDTH, WINDOW_HEIGHT,
+    WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT,
+    LOG_MIN_HEIGHT, TREE_MIN_WIDTH,
+)
+from .attack_tree import AttackTree, ATTACK_LABELS
+from .config_form import ConfigForm
+from .log_panel import LogPanel
+from .runner import run_attack_in_thread
 
 
-class ISISAttackApp:
-    def __init__(self, root):
-        self.root = root
-        root.title("ISIS Protocol Attack Simulator")
-        root.geometry("1100x720")
-        root.configure(bg=BG)
-        root.minsize(800, 500)
+class MainWindow:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("IS-IS 协议攻击模拟器 — 操作面板")
+        self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+        self.root.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+        self.root.configure(bg=BG_MAIN)
 
-        self._attack_thread = None
-        self._selected_attack = None
+        self._stop_event = threading.Event()
+        self._log_queue = queue.Queue()
+        self._current_attack: str | None = None
 
-        self._build_toolbar()
-        self._build_body()
-        self._build_log()
+        self._log_queue.put(("SYSTEM", "GUI 操作面板已启动"))
 
-    # ------------------------------------------------------------------
-    # Toolbar
-    # ------------------------------------------------------------------
-
-    def _build_toolbar(self):
-        bar = ttk.Frame(self.root)
-        bar.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(5, 0))
-
-        self._attack_label = ttk.Label(bar, text="Select an attack from the tree →", font=FONT)
-        self._attack_label.pack(side=tk.LEFT, padx=5)
-
-        self._stop_btn = ttk.Button(bar, text="■ Stop", command=self._on_stop, state=tk.DISABLED)
-        self._stop_btn.pack(side=tk.RIGHT, padx=3)
-
-        self._run_btn = ttk.Button(bar, text="▶ Run", command=self._on_run, state=tk.DISABLED)
-        self._run_btn.pack(side=tk.RIGHT, padx=3)
-
-        ttk.Separator(self.root, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=5, pady=2)
+        self._build_ui()
+        self._start_log_poll()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------------
-    # Body: left tree + right form
+    # UI 构建
     # ------------------------------------------------------------------
 
-    def _build_body(self):
-        body = ttk.Frame(self.root)
-        body.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=(0, 3))
+    def _build_ui(self):
+        # -- 标题栏 --
+        title_bar = ttk.Frame(self.root)
+        title_bar.pack(fill=tk.X, padx=PAD_OUTER, pady=(PAD_OUTER, 0))
+        ttk.Label(title_bar, text="IS-IS 协议攻击模拟器 — 操作面板",
+                  font=FONT_TITLE).pack(side=tk.LEFT)
 
-        # Left panel — attack tree (fixed width)
-        left = ttk.Frame(body, width=280)
-        left.pack(side=tk.LEFT, fill=tk.Y)
-        left.pack_propagate(False)
+        # -- 主体: 左右分栏 --
+        paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True, padx=PAD_OUTER, pady=PAD_OUTER)
 
-        self.tree = AttackTreePanel(left, on_select=self._on_attack_select)
-        self.tree.pack(fill=tk.BOTH, expand=True)
+        # 左侧: 攻击列表
+        tree_frame = ttk.Frame(paned, width=TREE_MIN_WIDTH)
+        self._attack_tree = AttackTree(tree_frame)
+        self._attack_tree.pack(fill=tk.BOTH, expand=True)
+        self._attack_tree.on_select = self._on_attack_select
+        paned.add(tree_frame, weight=0)
 
-        # Separator
-        ttk.Separator(body, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=2)
+        # 右侧: 表单 + 按钮 + 状态 + 日志
+        right_frame = ttk.Frame(paned)
+        paned.add(right_frame, weight=1)
 
-        # Right panel — config form (expands)
-        right = ttk.Frame(body)
-        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._form = ConfigForm(right_frame)
+        self._form.pack(fill=tk.BOTH, expand=True)
 
-        self.form = ConfigFormPanel(right)
-        self.form.pack(fill=tk.BOTH, expand=True)
+        # 操作按钮栏
+        btn_frame = ttk.Frame(right_frame)
+        btn_frame.pack(fill=tk.X, pady=(PAD_INNER, 0))
+
+        self._start_btn = ttk.Button(btn_frame, text="▶ 启动攻击", command=self._on_start)
+        self._start_btn.pack(side=tk.LEFT, padx=(0, 4))
+
+        self._stop_btn = ttk.Button(btn_frame, text="■ 停止", command=self._on_stop, state=tk.DISABLED)
+        self._stop_btn.pack(side=tk.LEFT, padx=4)
+
+        ttk.Button(btn_frame, text="保存配置", command=self._on_save_config).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_frame, text="加载配置", command=self._on_load_config).pack(side=tk.LEFT, padx=4)
+
+        # 状态栏
+        status_frame = ttk.Frame(right_frame)
+        status_frame.pack(fill=tk.X, pady=(PAD_INNER, 0))
+
+        self._status_var = tk.StringVar(value="● 状态: 就绪")
+        ttk.Label(status_frame, textvariable=self._status_var, font=FONT_STATUS).pack(side=tk.LEFT)
+
+        self._count_var = tk.StringVar(value="已发包: 0")
+        ttk.Label(status_frame, textvariable=self._count_var, font=FONT_STATUS).pack(side=tk.LEFT, padx=(20, 0))
+
+        # 进度条
+        self._progress = ttk.Progressbar(right_frame, mode="indeterminate")
+        self._progress.pack(fill=tk.X, pady=(2, 0))
+
+        # 日志面板
+        log_frame = ttk.Frame(right_frame, height=LOG_MIN_HEIGHT)
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(PAD_INNER, 0))
+        self._log_panel = LogPanel(log_frame)
+        self._log_panel.pack(fill=tk.BOTH, expand=True)
+
+        # -- 底部状态栏 --
+        bottom_bar = ttk.Frame(self.root)
+        bottom_bar.pack(fill=tk.X, padx=PAD_OUTER, pady=(0, PAD_OUTER))
+        ttk.Label(bottom_bar, text="IS-IS Attack v0.1.0 | MIT License",
+                  font=FONT_STATUS).pack(side=tk.LEFT)
 
     # ------------------------------------------------------------------
-    # Log panel (bottom)
+    # 日志轮询
     # ------------------------------------------------------------------
 
-    def _build_log(self):
-        bottom = ttk.Frame(self.root, height=200)
-        bottom.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=(0, 5))
-        bottom.pack_propagate(False)
+    def _start_log_poll(self):
+        self._poll_log_queue()
 
-        ttk.Separator(bottom, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 2))
-
-        self.log = LogPanel(bottom)
-        self.log.pack(fill=tk.BOTH, expand=True)
-
-    # ------------------------------------------------------------------
-    # Callbacks
-    # ------------------------------------------------------------------
-
-    def _on_attack_select(self, attack_name):
-        self._selected_attack = attack_name
-        self._attack_label.configure(text=f"Attack: {attack_name}")
-        self.form.load_config(attack_name)
-        self._run_btn.configure(state=tk.NORMAL)
-        self.log.info(f"Selected: {attack_name}")
-
-    def _on_run(self):
-        if not self._selected_attack:
-            return
-        self._run_btn.configure(state=tk.DISABLED)
-        self._stop_btn.configure(state=tk.NORMAL)
-
-        kwargs = self.form.get_values()
-        attack_name = self._selected_attack
-        self.log.info(f"Starting {attack_name}...")
-
-        import threading
-        from isis_attack.config.config import build_config
-
-        attack_cls, config_cls = ATTACK_REGISTRY[attack_name]
-
-        def _run():
+    def _poll_log_queue(self):
+        while True:
             try:
-                config = build_config(attack_name, kwargs)
-                attack = attack_cls(config)
-                result = attack.run()
-                self.root.after(0, self._on_done, result)
-            except Exception as e:
-                self.root.after(0, self._on_error, str(e))
+                level, message = self._log_queue.get_nowait()
+                self._log_panel.write(level, message)
+            except queue.Empty:
+                break
+        self.root.after(100, self._poll_log_queue)
 
-        self._attack_thread = threading.Thread(target=_run, daemon=True)
-        self._attack_thread.start()
+    # ------------------------------------------------------------------
+    # 事件处理
+    # ------------------------------------------------------------------
+
+    def _on_attack_select(self, attack_name: str):
+        self._current_attack = attack_name
+        label = ATTACK_LABELS.get(attack_name, attack_name)
+        self._form.set_attack(attack_name)
+        self._log_queue.put(("SYSTEM", f"已选择攻击模块: {label} ({attack_name})"))
+
+    def _on_start(self):
+        if not self._current_attack:
+            messagebox.showwarning("提示", "请先选择攻击类型")
+            return
+
+        config_dict = self._form.get_config_dict()
+        self._log_queue.put(("INFO", f"启动 {self._current_attack}..."))
+
+        def _done_cb(result):
+            self._log_queue.put(("SYSTEM", f"结果: {result.details} (已发包: {result.packets_sent})"))
+            if result.success:
+                self._log_queue.put(("INFO", "攻击完成 ✓"))
+            else:
+                self._log_queue.put(("ERROR", "攻击失败 ✗"))
+
+        t = run_attack_in_thread(self._current_attack, config_dict, log_callback=_done_cb)
+        if t is None:
+            self._log_queue.put(("ERROR", f"未知攻击类型: {self._current_attack}"))
+            return
+
+        self._set_running_state(True)
+        self._progress.start(10)
 
     def _on_stop(self):
-        self.log.info("Stop requested")
-        self._run_btn.configure(state=tk.NORMAL)
-        self._stop_btn.configure(state=tk.DISABLED)
+        self._log_queue.put(("WARN", "用户请求停止攻击..."))
+        self._stop_event.set()
+        self._set_running_state(False)
+        self._progress.stop()
 
-    def _on_done(self, result):
-        self._run_btn.configure(state=tk.NORMAL)
-        self._stop_btn.configure(state=tk.DISABLED)
-        if result.success:
-            self.log.success(f"Done: {result.details} (packets: {result.packets_sent})")
+    def _on_save_config(self):
+        if not self._current_attack:
+            messagebox.showwarning("提示", "请先选择攻击类型")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".yaml",
+            filetypes=[("YAML files", "*.yaml"), ("All files", "*.*")],
+            title="保存攻击配置",
+        )
+        if not path:
+            return
+        config_dict = self._form.get_config_dict()
+        config_dict["attack"] = self._current_attack
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(config_dict, f, allow_unicode=True, default_flow_style=False)
+        self._log_queue.put(("INFO", f"配置已保存到: {path}"))
+
+    def _on_load_config(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("YAML files", "*.yaml"), ("All files", "*.*")],
+            title="加载攻击配置",
+        )
+        if not path:
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        attack_name = data.pop("attack", None)
+        if attack_name:
+            self._form.set_attack(attack_name)
+            self._current_attack = attack_name
+        self._form.set_config_dict(data)
+        self._log_queue.put(("INFO", f"配置已加载: {path}"))
+
+    def _on_close(self):
+        self._stop_event.set()
+        self.root.destroy()
+
+    # ------------------------------------------------------------------
+    # 状态切换
+    # ------------------------------------------------------------------
+
+    def _set_running_state(self, running: bool):
+        if running:
+            self._start_btn.configure(state=tk.DISABLED)
+            self._stop_btn.configure(state=tk.NORMAL)
+            self._status_var.set("● 状态: 攻击运行中...")
         else:
-            self.log.error(f"Failed: {result.details}")
+            self._start_btn.configure(state=tk.NORMAL)
+            self._stop_btn.configure(state=tk.DISABLED)
+            self._status_var.set("● 状态: 就绪")
+            self._stop_event.clear()
 
-    def _on_error(self, msg):
-        self._run_btn.configure(state=tk.NORMAL)
-        self._stop_btn.configure(state=tk.DISABLED)
-        self.log.error(f"Error: {msg}")
+    def run(self):
+        self.root.mainloop()

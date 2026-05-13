@@ -58,7 +58,8 @@
       "Bash(GIT_SSH_COMMAND=\"\" git push -u origin master)",
       "Bash(python -c \"import tkinter; root=tkinter.Tk\\(\\); from isis_attack.gui.app import ISISAttackApp; app=ISISAttackApp\\(root\\); app._on_attack_select\\('route-inject'\\); vals=app.form.get_values\\(\\); assert 'iface' in vals and 'metric' in vals; app._on_attack_select\\('iih-inject'\\); vals2=app.form.get_values\\(\\); assert 'metric' not in vals2 and 'priority' in vals2; print\\('GUI test OK'\\); root.destroy\\(\\)\")",
       "Bash(python -c \"import tkinter; root=tkinter.Tk\\(\\); from isis_attack.gui.app import ISISAttackApp; app=ISISAttackApp\\(root\\); app._on_attack_select\\('route-inject'\\); vals=app.form.get_values\\(\\); assert 'metric' in vals; app._on_attack_select\\('iih-inject'\\); vals2=app.form.get_values\\(\\); assert 'priority' in vals2; assert 'metric' not in vals2; print\\('GUI test OK'\\); root.destroy\\(\\)\")",
-      "Bash(python -c \"import tkinter; root=tkinter.Tk\\(\\); from isis_attack.gui.app import ISISAttackApp; app=ISISAttackApp\\(root\\); app._on_attack_select\\('route-inject'\\); print\\('OK'\\); root.destroy\\(\\)\")"
+      "Bash(python -c \"import tkinter; root=tkinter.Tk\\(\\); from isis_attack.gui.app import ISISAttackApp; app=ISISAttackApp\\(root\\); app._on_attack_select\\('route-inject'\\); print\\('OK'\\); root.destroy\\(\\)\")",
+      "Bash(python -c \"import tkinter; root=tkinter.Tk\\(\\); from isis_attack.gui.app import MainWindow; app=MainWindow\\(\\); app._on_attack_select\\('route-inject'\\); d=app._form.get_config_dict\\(\\); assert 'metric' in str\\(d\\) or 'metric' in d; app._on_attack_select\\('iih-inject'\\); d2=app._form.get_config_dict\\(\\); print\\('route:', d\\); print\\('iih:', d2\\); print\\('OK'\\); root.destroy\\(\\)\")"
     ]
   }
 }

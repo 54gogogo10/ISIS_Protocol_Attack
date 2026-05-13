@@ -216,6 +216,9 @@ class ConfigForm(tk.Frame):
             except Exception:
                 pass
 
+    def format_preview(self) -> str:
+        return _format_isis_preview(self)
+
     # ------------------------------------------------------------------
     # Build helpers
     # ------------------------------------------------------------------
@@ -334,3 +337,146 @@ def _build_field_row(parent: ttk.Frame, field_name: str, row: int, form: ConfigF
         form._widgets[field_name] = var
 
     parent.columnconfigure(1, weight=1)
+
+
+# =====================================================================
+# 报文预览
+# =====================================================================
+
+def _safe_get(widgets: dict, key: str, default=""):
+    v = widgets.get(key)
+    if v is None:
+        return default
+    try:
+        return v.get()
+    except Exception:
+        return str(v) if v else default
+
+
+def _format_isis_preview(form: "ConfigForm") -> str:
+    w = form._widgets
+    attack = form._attack_name or ""
+
+    iface = _safe_get(w, "iface", "eth0")
+    target = _safe_get(w, "target", "01:80:C2:00:00:14")
+    sys_id = _safe_get(w, "sys_id", "1921.6800.1001")
+    area = _safe_get(w, "area_addr", "49.0001")
+    level = _safe_get(w, "level", "1")
+
+    src_mac = "??:??:??:??:??:??"
+    try:
+        from isis_attack.network.adapter import get_local_mac
+        src_mac = get_local_mac(iface) or src_mac
+    except Exception:
+        pass
+
+    l1 = "L1" if level == "1" else "L2"
+    dst_map = {"1": "01:80:C2:00:00:14 (AllL1ISs)", "2": "01:80:C2:00:00:15 (AllL2ISs)"}
+    dst_label = dst_map.get(level, "")
+
+    lines = []
+    lines.append("┌── L2 / LLC ──────────────────────────────────────┐")
+    lines.append(f"│ Src MAC : {src_mac:<32} │")
+    lines.append(f"│ Dst MAC : {dst_label:<32} │")
+    lines.append(f"│ DSAP/SSAP: 0xFE/0xFE   Ctrl: 0x03               │")
+    lines.append("├── ISIS Common Header ─────────────────────────────┤")
+    lines.append(f"│ NLPID: 0x83   Hdr Len: 14   Version: 1          │")
+    lines.append(f"│ System ID : {sys_id:<24} │")
+    if attack in ("iih-inject", "adjacency-break", "dis-hijack"):
+        pdu_name = "IIH"
+    elif attack in ("route-inject", "max-seq", "purge-lsp", "fight-back", "overload-bit"):
+        pdu_name = "LSP"
+    elif attack in ("flood", "spf-recalc", "db-overflow"):
+        pdu_name = "IIH/LSP"
+    else:
+        pdu_name = "?"
+    lines.append(f"│ PDU Type : {l1} ({pdu_name})")
+
+    # Attack-specific body
+    if attack in ("iih-inject", "adjacency-break", "dis-hijack"):
+        pri = _safe_get(w, "priority", "64")
+        hold = _safe_get(w, "hold_timer", "30")
+        hello = _safe_get(w, "hello_interval", "10")
+        lines.append("├── IIH (IS-IS Hello) ──────────────────────────────┤")
+        lines.append(f"│ Circuit Type: {l1}   Priority: {pri:<3}               │")
+        lines.append(f"│ Hold Timer: {hold:<4}s   Hello Interval: {hello:<4}s     │")
+        lines.append(f"│ LAN ID: {sys_id}.00                              │")
+        lines.append("├── TLVs ──────────────────────────────────────────┤")
+        lines.append(f"│ Area Addresses (1): {area}                       │")
+        lines.append(f"│ Protocols Supported (129): IPv4 (0xCC)           │")
+        auth = _safe_get(w, "auth_type", "none")
+        if auth != "none":
+            lines.append(f"│ Authentication ({'10' if auth=='plain' else '133'}): {auth}")
+
+    elif attack in ("route-inject", "max-seq", "purge-lsp", "fight-back", "overload-bit"):
+        lsp_id = _safe_get(w, "lsp_id", "") or f"{sys_id}.00-00"
+        seq = _safe_get(w, "sequence", "1")
+        lifetime = _safe_get(w, "remaining_lifetime", "1200")
+        metric = _safe_get(w, "metric", "10")
+        net = _safe_get(w, "network_addr", "10.0.0.0")
+        mask = _safe_get(w, "network_mask", "255.255.255.0")
+        ol = _safe_get(w, "overload_bit", False)
+        lines.append("├── LSP ────────────────────────────────────────────┤")
+        lines.append(f"│ LSP ID : {lsp_id:<32} │")
+        lines.append(f"│ Sequence : {seq:<10}  Lifetime: {lifetime:<6}s      │")
+        lines.append(f"│ Flags : {'OL ' if ol else ''}L1 IS                      │")
+        lines.append("├── TLVs ──────────────────────────────────────────┤")
+        lines.append(f"│ Area Addresses (1): {area}                       │")
+        lines.append(f"│ Protocols Supported (129): IPv4 (0xCC)           │")
+        lines.append(f"│ Hostname (137): {sys_id}                         │")
+        if net != "0.0.0.0":
+            lines.append(f"│ IP Int. Reach (128): {net}/{mask} metric={metric}")
+
+    elif attack in ("flood", "spf-recalc", "db-overflow"):
+        dur = _safe_get(w, "duration", "60")
+        lines.append("├── DoS 攻击参数 ───────────────────────────────────┤")
+        lines.append(f"│ Duration: {dur:<6}s   Rate: {_safe_get(w, 'packet_rate', '10')} pps")
+        if attack == "spf-recalc":
+            lines.append(f"│ LSP Change Interval: {_safe_get(w, 'lsp_change_interval', '2')}s")
+        elif attack == "db-overflow":
+            lines.append(f"│ LSP Count: {_safe_get(w, 'lsp_count', '1000')}")
+
+    elif attack == "mitm":
+        lines.append("├── MITM 参数 ──────────────────────────────────────┤")
+        lines.append(f"│ Action: {_safe_get(w, 'action', 'modify')}")
+        lines.append(f"│ Target A: {_safe_get(w, 'target_a', '')}")
+        lines.append(f"│ Target B: {_safe_get(w, 'target_b', '')}")
+
+    elif attack == "replay":
+        lines.append("├── Replay 参数 ────────────────────────────────────┤")
+        lines.append(f"│ PCAP: {_safe_get(w, 'capture_file', '')[:30]}")
+        lines.append(f"│ Loop: {_safe_get(w, 'replay_loop', False)}   Interval: {_safe_get(w, 'replay_interval', '5')}s")
+
+    lines.append("└──────────────────────────────────────────────────┘")
+    return "\n".join(lines)
+
+
+class PacketPreview(ttk.LabelFrame):
+    """报文预览面板 — 显示构造的 IS-IS 报文结构。"""
+
+    def __init__(self, parent, preview_fn, export_fn=None, **kw):
+        super().__init__(parent, text="报文预览", padding=6, **kw)
+        self._preview_fn = preview_fn
+        self._export_fn = export_fn
+
+        bar = ttk.Frame(self)
+        bar.pack(fill=tk.X, pady=(0, 4))
+        ttk.Button(bar, text="刷新预览", command=self.refresh).pack(side=tk.RIGHT)
+
+        self._text = tk.Text(self, font=("Consolas", 9), width=42, height=24,
+                             bg="#1e1e1e", fg="#d4d4d4",
+                             insertbackground="#ffffff",
+                             relief=tk.FLAT, state=tk.DISABLED,
+                             wrap=tk.NONE)
+        self._text.pack(fill=tk.BOTH, expand=True)
+        self.refresh()
+
+    def refresh(self):
+        try:
+            preview = self._preview_fn()
+        except Exception:
+            preview = "(报文预览不可用)"
+        self._text.configure(state=tk.NORMAL)
+        self._text.delete("1.0", tk.END)
+        self._text.insert("1.0", preview)
+        self._text.configure(state=tk.DISABLED)

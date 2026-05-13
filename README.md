@@ -75,52 +75,6 @@ Attacks can be configured via:
 | `--max-packets` | `0` | Maximum packets to send (0 = unlimited) |
 | `--mode` | `passive` | Operating mode: passive or active |
 
-## Architecture
-
-```
-isis_attack/
-  __init__.py          # Package init, version
-  __main__.py          # GUI entry point (python -m isis_attack)
-  config/
-    config.py          # Configuration loader (YAML + CLI merge)
-    types.py           # Dataclass types for all configs
-    validators.py      # Input validation
-  core/
-    auth.py            # IS-IS authentication (plaintext, HMAC-MD5)
-    packet.py          # PDU construction (IIH, LSP, SNP)
-    neighbor.py        # Neighbor state machine
-    sniffer.py         # L2 sniffer
-    arp_spoof.py       # ARP spoof engine
-    active_engine.py   # Active attack engine
-  network/
-    adapter.py         # L2 network adapter
-    sender.py          # Packet sender
-  attacks/
-    base.py            # BaseAttack abstract class
-    adjacency/         # IIH injection, adjacency break, DIS hijack
-    lsp/               # Route injection, max-seq, purge, fight-back, overload-bit
-    dos/               # Flood, SPF recalc, DB overflow
-    protocol/          # MITM, replay
-  gui/
-    app.py             # Main GUI window
-    attack_tree.py     # Attack tree navigation
-    config_form.py     # Configuration form
-    log_panel.py       # Log display panel
-    runner.py          # Background attack thread runner
-    pcap_tools.py      # PCAP file import
-    styles.py          # Color scheme and fonts
-  cli/
-    main.py            # Click CLI entry point
-    commands.py        # Attack command registration
-    formatters.py      # Output formatters (table, json)
-  utils/
-    log.py             # Logging utilities
-    validators.py      # Validation helpers
-tests/
-  unit/                # Unit tests for all components
-  integration/         # Integration tests
-```
-
 ## Build
 
 ```powershell
@@ -140,8 +94,72 @@ tests/
 
 ## Requirements
 
-- Npcap (Windows) for raw packet injection
+- Npcap (Windows) / AF_PACKET (Linux) for raw L2 packet injection
+- Docker Desktop + FRRouting for integration tests
 - Administrative/root privileges for L2 operations
+
+## Testing
+
+```bash
+# Unit tests (79 tests)
+pytest tests/unit/ -v
+
+# Integration tests — requires Docker Desktop + FRRouting
+docker compose -f docker/topo1-single-area/docker-compose.yml up -d
+pytest tests/integration/ -v    # 17 tests
+docker compose -f docker/topo1-single-area/docker-compose.yml down -v
+
+# Full suite: 96 tests
+pytest tests/unit/ tests/integration/ -v
+```
+
+Integration tests run against real FRR routers in Docker with ISIS Level-1 broadcast LAN. Each attack verifies packet delivery and post-attack neighbor stability.
+
+## Architecture
+
+```
+isis_attack/
+  __init__.py          # Package init, version
+  __main__.py          # GUI entry (python -m isis_attack)
+  core/
+    auth.py            # IS-IS auth (plain TLV 10, HMAC-MD5 TLV 133)
+    packet.py          # PDU construction (IIH/LSP + TLV builders + checksum)
+    neighbor.py        # IS neighbor state machine (Down/Init/Up)
+    sniffer.py         # L2 sniffer (pcap-ct, thread-safe)
+    arp_spoof.py       # ARP spoof engine (MAC discovery + restore)
+    active_engine.py   # Active adjacency engine (sniff→adjacency→LSP inject)
+  attacks/
+    base.py            # BaseAttack (setup/launch/verify/teardown lifecycle)
+    adjacency/         # iih-inject, adjacency-break, dis-hijack
+    lsp/               # route-inject, max-seq, purge-lsp, fight-back, overload-bit
+    dos/               # flood, spf-recalc, db-overflow
+    protocol/          # mitm, replay
+  config/
+    config.py          # Config loader (default→YAML→CLI 3-layer merge)
+    types.py           # 6 dataclass config types
+  network/
+    adapter.py         # L2 NIC adapter (MAC/IP)
+    sender.py          # PacketSender (Scapy sendp, rate-limited)
+  cli/
+    main.py            # Click CLI entry
+    commands.py        # 13 attack subcommands
+    formatters.py      # Output formatters (table/json)
+  gui/
+    app.py             # Main window (1100×720)
+    attack_tree.py     # 4-category attack tree
+    config_form.py     # Dynamic config form
+    log_panel.py       # Thread-safe log
+    runner.py          # Background attack thread
+    pcap_tools.py      # PCAP import
+    styles.py          # Color/font constants
+  utils/
+    validators.py      # SysID/AreaAddr/MAC validators
+tests/
+  unit/                # 79 unit tests
+  integration/         # 17 Docker FRR integration tests
+docker/
+  topo1-single-area/   # 2 FRR routers + attacker container
+```
 
 ## License
 

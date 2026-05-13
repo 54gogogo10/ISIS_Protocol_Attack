@@ -2,6 +2,7 @@ from isis_attack.attacks.base import BaseAttack, AttackResult, AttackCategory
 from isis_attack.config.types import LSPConfig
 from isis_attack.core.packet import build_lsp_with_tlvs
 from isis_attack.network.sender import PacketSender
+from isis_attack.network.adapter import get_local_mac
 
 
 class PurgeLSPAttack(BaseAttack):
@@ -11,7 +12,6 @@ class PurgeLSPAttack(BaseAttack):
     config: LSPConfig
 
     def setup(self) -> None:
-        from isis_attack.network.adapter import get_local_mac
         self._src_mac = get_local_mac(self.config.iface)
         self._sender = PacketSender(
             iface=self.config.iface,

@@ -231,6 +231,11 @@ def _build_lsp_raw(
     pdu_type = ISIS_TYPE_L1_LSP if level == 1 else ISIS_TYPE_L2_LSP
 
     clean = lsp_id.replace(".", "").replace("-", "")
+    if len(clean) < 14:
+        raise ValueError(
+            f"LSP ID too short: '{lsp_id}' — expected format like "
+            f"'CCCC.CCCC.CCCC.00-00' (16 hex chars + separators)"
+        )
     if len(clean) < 16:
         clean = clean.ljust(16, "0")
     lsp_id_bytes = bytes.fromhex(clean[:16])
@@ -302,14 +307,13 @@ def build_lsp_with_tlvs(
     metric: int = 10,
     network_addr: str = "10.0.0.0",
     network_mask: str = "255.255.255.0",
-    auth_type: int = AUTH_NONE,
-    auth_key: bytes = b"",
     area_addr: str = "49.0001",
 ):
     """Build a complete LSP with IP reachability TLVs.
 
-    This is the high-level builder used by attack modules.
-    Must include Area Addresses TLV (type 1) for FRR acceptance.
+    High-level builder used by attack modules. Includes Area Addresses
+    TLV (type 1) for FRR acceptance. Note: authentication TLV is NOT
+    appended — callers needing auth must append build_auth_tlv() manually.
     """
     tlvs = b""
     tlvs += _build_area_tlv(area_addr)

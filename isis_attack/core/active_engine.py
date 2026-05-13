@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from .auth import AUTH_NONE
 from .neighbor import ISNeighborState
+from isis_attack.network.adapter import get_local_mac
 
 
 @dataclass
@@ -30,7 +31,6 @@ class ActiveISISEngine:
         self.auth_key = auth_key
         self.params = None
 
-        from isis_attack.network.adapter import get_local_mac
         self.src_mac = get_local_mac(iface)
 
         self._state = ISNeighborState.DOWN

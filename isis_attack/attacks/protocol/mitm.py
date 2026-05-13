@@ -55,6 +55,3 @@ class MITMAttack(BaseAttack):
 
     def verify(self) -> bool:
         return self._modified > 0
-
-    def teardown(self) -> None:
-        pass

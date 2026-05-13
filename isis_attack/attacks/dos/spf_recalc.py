@@ -40,6 +40,3 @@ class SPFRecalcAttack(BaseAttack):
 
     def verify(self) -> bool:
         return self._sender.sent_count > 5
-
-    def teardown(self) -> None:
-        pass

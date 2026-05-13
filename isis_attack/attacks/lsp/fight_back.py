@@ -49,6 +49,3 @@ class FightBackAttack(BaseAttack):
 
     def verify(self) -> bool:
         return self._sender.sent_count > 1
-
-    def teardown(self) -> None:
-        pass

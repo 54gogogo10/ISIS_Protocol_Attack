@@ -35,8 +35,3 @@ class OverloadBitAttack(BaseAttack):
             details=f"Overload-Bit 攻击: LSP={lsp_id}, OL=1",
         )
 
-    def verify(self) -> bool:
-        return self._sender.sent_count > 0
-
-    def teardown(self) -> None:
-        pass

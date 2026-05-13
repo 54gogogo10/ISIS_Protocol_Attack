@@ -38,8 +38,3 @@ class ReplayAttack(BaseAttack):
             details=f"重放: {self._sender.sent_count} packets replayed",
         )
 
-    def verify(self) -> bool:
-        return self._sender.sent_count > 0
-
-    def teardown(self) -> None:
-        pass

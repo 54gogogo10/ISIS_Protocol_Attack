@@ -35,8 +35,3 @@ class AdjacencyBreakAttack(BaseAttack):
             details="邻接破坏: 注入错误 Area 地址 + Hold=0 的 IIH",
         )
 
-    def verify(self) -> bool:
-        return self._sender.sent_count > 0
-
-    def teardown(self) -> None:
-        pass

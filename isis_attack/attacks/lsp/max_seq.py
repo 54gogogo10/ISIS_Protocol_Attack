@@ -35,8 +35,3 @@ class MaxSeqAttack(BaseAttack):
             details=f"Max-Seq 攻击: Seq=0x{MAX_ISIS_SEQ:08X}",
         )
 
-    def verify(self) -> bool:
-        return self._sender.sent_count > 0
-
-    def teardown(self) -> None:
-        pass

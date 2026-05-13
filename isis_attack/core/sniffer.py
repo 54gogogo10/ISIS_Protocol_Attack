@@ -49,13 +49,15 @@ class Sniffer:
         self._sniffer = None
         self._stop_event = threading.Event()
         self._packets = []
+        self._pkt_lock = threading.Lock()
         self._topology = TopologyModel()
 
     def start(self, timeout: int = 30) -> None:
         if not self.available:
             return
         self._stop_event.clear()
-        self._packets = []
+        with self._pkt_lock:
+            self._packets = []
 
         def _capture():
             sniffer = pcap.pcap(name=self.iface, promisc=True, immediate=True)
@@ -66,7 +68,8 @@ class Sniffer:
                     if time.monotonic() > deadline or self._stop_event.is_set():
                         break
                     if len(self._packets) < _MAX_PACKETS:
-                        self._packets.append(pkt)
+                        with self._pkt_lock:
+                            self._packets.append(pkt)
             except Exception:
                 pass
 
@@ -76,11 +79,13 @@ class Sniffer:
 
     def stop(self):
         self._stop_event.set()
-        return self._packets
+        with self._pkt_lock:
+            return list(self._packets)
 
     @property
     def packets(self):
-        return self._packets
+        with self._pkt_lock:
+            return list(self._packets)
 
     @property
     def topology(self):

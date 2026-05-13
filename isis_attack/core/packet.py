@@ -220,35 +220,28 @@ def _build_lsp_raw(
     level: int = 1,
     sequence: int = 0x00000001,
     remaining_lifetime: int = 1200,
+    overload_bit: bool = False,
     tlvs: bytes = b"",
-    auth_type: int = AUTH_NONE,
-    auth_key: bytes = b"",
 ) -> bytes:
-    """Build an ISIS LSP as raw bytes with correct checksum.
-
-    Constructs the LSP body manually, computes checksum over the entire
-    body (including appended TLVs), and returns the complete LSP PDU.
-    """
     pdu_type = ISIS_TYPE_L1_LSP if level == 1 else ISIS_TYPE_L2_LSP
 
-    # Parse lsp_id into bytes: "CCCC.CCCC.CCCC.00-00" -> 8 bytes
     clean = lsp_id.replace(".", "").replace("-", "")
     if len(clean) < 16:
         clean = clean.ljust(16, "0")
     lsp_id_bytes = bytes.fromhex(clean[:16])
 
-    # Flags / typeblock: bits [7-6]=L1L2(00=L1,01=L2,10=L1L2,11=reserved)
-    # bit[5]=overload, bit[4]=attached
-    typeblock = 0x03  # L1 IS
+    # Flags / typeblock: bits [7-6]=L1L2, bit[5]=overload, bit[4]=attached
+    typeblock = 0x03
+    if overload_bit:
+        typeblock |= 0x20  # Set OL bit
 
-    # Build LSP body (without checksum)
     lsp_body = (
-        struct.pack("!H", remaining_lifetime)    # u16 remaining_lifetime
-        + lsp_id_bytes                           # 8 bytes lsp_id
-        + struct.pack("!I", sequence)            # u32 sequence
-        + struct.pack("!H", 0)                   # u16 checksum (placeholder)
-        + struct.pack("!B", typeblock)           # u8 typeblock
-        + tlvs                                    # TLVs
+        struct.pack("!H", remaining_lifetime)
+        + lsp_id_bytes
+        + struct.pack("!I", sequence)
+        + struct.pack("!H", 0)
+        + struct.pack("!B", typeblock)
+        + tlvs
     )
 
     # Compute and patch checksum
@@ -273,19 +266,17 @@ def build_lsp_packet(
     level: int = 1,
     sequence: int = 0x00000001,
     remaining_lifetime: int = 1200,
+    overload_bit: bool = False,
     tlvs: bytes = b"",
-    auth_type: int = AUTH_NONE,
-    auth_key: bytes = b"",
 ):
-    """Build a complete ISIS LSP PDU (L2 + ISIS + LSP body + correct checksum)."""
     dst_mac = _build_level_mac(level)
-    dst_bytes = bytes(int(b, 16) for b in dst_mac.split(":"))
-    src_bytes = bytes(int(b, 16) for b in src_mac.split(":"))
+    dst_bytes = _mac_bytes(dst_mac)
+    src_bytes = _mac_bytes(src_mac)
 
     isis_pdu = _build_lsp_raw(
         sys_id=sys_id, lsp_id=lsp_id, level=level,
         sequence=sequence, remaining_lifetime=remaining_lifetime,
-        tlvs=tlvs, auth_type=auth_type, auth_key=auth_key,
+        overload_bit=overload_bit, tlvs=tlvs,
     )
 
     # 802.3 LLC encapsulation
@@ -330,7 +321,7 @@ def build_lsp_with_tlvs(
         sys_id=sys_id, lsp_id=lsp_id, src_mac=src_mac,
         level=level, sequence=sequence,
         remaining_lifetime=remaining_lifetime,
-        tlvs=tlvs, auth_type=auth_type, auth_key=auth_key,
+        overload_bit=overload_bit, tlvs=tlvs,
     )
 
 

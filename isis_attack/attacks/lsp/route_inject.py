@@ -45,8 +45,3 @@ class RouteInjectAttack(BaseAttack):
             details=f"路由注入: LSP={lsp_id}, metric={self.config.metric}, net={self.config.network_addr}",
         )
 
-    def verify(self) -> bool:
-        return self._sender.sent_count > 0
-
-    def teardown(self) -> None:
-        pass

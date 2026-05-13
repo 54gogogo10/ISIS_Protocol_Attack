@@ -36,8 +36,3 @@ class DISHijackAttack(BaseAttack):
             details=f"DIS 抢占: Priority=127, System ID={self.config.sys_id}",
         )
 
-    def verify(self) -> bool:
-        return self._sender.sent_count > 0
-
-    def teardown(self) -> None:
-        pass

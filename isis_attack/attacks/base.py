@@ -13,25 +13,20 @@ class BaseAttack(ABC):
 
     def __init__(self, config, stop_event: threading.Event | None = None):
         self.config = config
-        self._sniffer = None
         self._sender = None
         self._stop_event = stop_event or threading.Event()
 
     @abstractmethod
-    def setup(self) -> None:
-        """Setup phase."""
+    def setup(self) -> None: ...
 
     @abstractmethod
-    def launch(self) -> AttackResult:
-        """Execute attack."""
+    def launch(self) -> AttackResult: ...
 
-    @abstractmethod
     def verify(self) -> bool:
-        """Verify attack effect."""
+        return self._sender is not None and self._sender.sent_count > 0
 
-    @abstractmethod
     def teardown(self) -> None:
-        """Cleanup resources."""
+        pass
 
     def send_one_round(self) -> bool:
         return False

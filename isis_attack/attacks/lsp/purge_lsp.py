@@ -33,8 +33,3 @@ class PurgeLSPAttack(BaseAttack):
             details=f"LSP 清除: Remaining Lifetime=0, LSP={lsp_id}",
         )
 
-    def verify(self) -> bool:
-        return self._sender.sent_count > 0
-
-    def teardown(self) -> None:
-        pass

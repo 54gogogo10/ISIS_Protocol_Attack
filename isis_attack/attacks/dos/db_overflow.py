@@ -34,8 +34,3 @@ class DBOverflowAttack(BaseAttack):
             details=f"DB 溢出: {self.config.lsp_count} LSPs injected",
         )
 
-    def verify(self) -> bool:
-        return self._sender.sent_count > 0
-
-    def teardown(self) -> None:
-        pass

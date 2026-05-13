@@ -43,5 +43,8 @@ def build_auth_tlv(auth_type: int, auth_key: bytes,
     raise ValueError(f"Unsupported auth_type: {auth_type}")
 
 
+_AUTH_NAMES = {AUTH_NONE: "none", AUTH_PLAIN: "plain", AUTH_MD5: "md5"}
+
+
 def auth_type_name(t: int) -> str:
-    return {AUTH_NONE: "none", AUTH_PLAIN: "plain", AUTH_MD5: "md5"}.get(t, f"unknown({t})")
+    return _AUTH_NAMES.get(t, f"unknown({t})")

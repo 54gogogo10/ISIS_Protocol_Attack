@@ -7,6 +7,19 @@ from .styles import FONT_LABEL, FONT_ENTRY, PAD_FORM, PAD_OUTER, SECTION_GAP
 
 
 def get_network_interfaces() -> list[str]:
+    """获取本机网卡可读名称。Windows 用 Scapy/Npcap，Linux 用 socket。"""
+    # Windows: Scapy IFACES 提供 Npcap 可读名称
+    try:
+        from scapy.all import IFACES
+        names = sorted(set(
+            d.description for d in IFACES.data.values()
+            if d.description and d.description != "Unknown"
+        ))
+        if names:
+            return names
+    except Exception:
+        pass
+    # Linux / fallback
     try:
         import socket
         return [name for _, name in socket.if_nameindex()]

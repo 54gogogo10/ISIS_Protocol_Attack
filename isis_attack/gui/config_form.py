@@ -40,7 +40,7 @@ FIELD_META: dict[str, dict] = {
     "sniff_mode":     {"widget": "radio",   "label": "嗅探模式", "choices": ["hub", "arp_spoof"]},
     "sys_id":         {"widget": "entry",   "label": "伪装 System ID", "default": "1921.6800.1001"},
     "area_addr":      {"widget": "entry",   "label": "Area 地址", "default": "49.0001"},
-    "level":          {"widget": "combo",   "label": "IS-IS 级别", "choices": ["1", "2"], "default": "1"},
+    "level":          {"widget": "combo",   "label": "IS-IS 级别", "choices": ["1", "2"], "default": "1", "type": int},
     "sniff_duration": {"widget": "spinbox", "label": "嗅探时长(秒)", "from_": 1, "to": 3600, "default": 30},
     "arp_target_a":   {"widget": "entry",   "label": "ARP 欺骗目标 A"},
     "arp_target_b":   {"widget": "entry",   "label": "ARP 欺骗目标 B"},
@@ -59,7 +59,7 @@ FIELD_META: dict[str, dict] = {
 
     # -- LSP 专属 --
     "lsp_id":            {"widget": "entry",   "label": "LSP ID"},
-    "sequence":          {"widget": "entry",   "label": "序列号 (hex)", "default": "1"},
+    "sequence":          {"widget": "entry",   "label": "序列号 (hex)", "default": "0x1", "type": int},
     "remaining_lifetime":{"widget": "spinbox", "label": "Remaining Lifetime(s)", "from_": 0, "to": 65535, "default": 1200},
     "metric":            {"widget": "spinbox", "label": "Metric", "from_": 0, "to": 16777215, "default": 10},
     "network_addr":      {"widget": "entry",   "label": "网络地址", "default": "10.0.0.0"},
@@ -70,6 +70,9 @@ FIELD_META: dict[str, dict] = {
     "thread_count":        {"widget": "spinbox", "label": "并发线程数", "from_": 1, "to": 100, "default": 1},
     "lsp_change_interval": {"widget": "spinbox", "label": "LSP 变化间隔(秒)", "from_": 1, "to": 3600, "default": 2},
     "lsp_count":           {"widget": "spinbox", "label": "注入 LSP 数量", "from_": 1, "to": 100000, "default": 1000},
+
+    # -- LSP 专属补充 --
+    "overload_bit": {"widget": "check", "label": "设置 Overload Bit"},
 
     # -- MITM 专属 --
     "target_a":    {"widget": "entry",   "label": "路由器 A IP"},
@@ -91,15 +94,20 @@ COMMON_FIELDS = [
 ]
 
 SPECIFIC_FIELDS: dict[str, list[str]] = {
-    "iih-inject":       ["hello_interval", "hold_timer", "priority", "auth_type", "auth_key"],
-    "adjacency-break":  ["hold_timer", "priority"],
+    "iih-inject":       ["hello_interval", "hold_timer", "priority",
+                         "circ_id", "auth_type", "auth_key"],
+    "adjacency-break":  ["hello_interval", "hold_timer", "priority"],
     "dis-hijack":       ["hello_interval", "hold_timer", "priority"],
     "route-inject":     ["lsp_id", "sequence", "remaining_lifetime", "metric",
                          "network_addr", "network_mask", "auth_type", "auth_key"],
-    "max-seq":          ["lsp_id"],
-    "purge-lsp":        ["lsp_id", "sequence"],
-    "fight-back":       ["lsp_id", "sequence", "metric", "network_addr", "network_mask"],
-    "overload-bit":     ["lsp_id", "sequence", "remaining_lifetime"],
+    "max-seq":          ["lsp_id", "sequence", "remaining_lifetime",
+                         "metric", "network_addr", "network_mask"],
+    "purge-lsp":        ["lsp_id", "sequence", "remaining_lifetime",
+                         "metric", "network_addr", "network_mask"],
+    "fight-back":       ["lsp_id", "sequence", "remaining_lifetime",
+                         "metric", "network_addr", "network_mask"],
+    "overload-bit":     ["lsp_id", "sequence", "remaining_lifetime", "overload_bit",
+                         "metric", "network_addr", "network_mask"],
     "flood":            ["duration", "thread_count"],
     "spf-recalc":       ["duration", "lsp_change_interval"],
     "db-overflow":      ["duration", "lsp_count"],

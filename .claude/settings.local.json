@@ -52,7 +52,8 @@
       "Bash(python -m py_compile isis_attack/attacks/lsp/route_inject.py)",
       "Bash(python -m py_compile isis_attack/attacks/lsp/max_seq.py)",
       "Bash(python -m py_compile isis_attack/attacks/lsp/purge_lsp.py)",
-      "Bash(python -m pytest tests/unit/ -q)"
+      "Bash(python -m pytest tests/unit/ -q)",
+      "Bash(git *)"
     ]
   }
 }

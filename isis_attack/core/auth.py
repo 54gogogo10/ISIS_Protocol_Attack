@@ -44,6 +44,7 @@ def build_auth_tlv(auth_type: int, auth_key: bytes,
 
 
 _AUTH_NAMES = {AUTH_NONE: "none", AUTH_PLAIN: "plain", AUTH_MD5: "md5"}
+AUTH_NAME_TO_CODE = {"none": AUTH_NONE, "plain": AUTH_PLAIN, "md5": AUTH_MD5}
 
 
 def auth_type_name(t: int) -> str:

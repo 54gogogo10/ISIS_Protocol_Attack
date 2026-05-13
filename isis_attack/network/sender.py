@@ -1,6 +1,9 @@
+import logging
 import time
 import threading
 from scapy.all import sendp
+
+_log = logging.getLogger(__name__)
 
 
 class PacketSender:
@@ -20,7 +23,8 @@ class PacketSender:
             sendp(packet, iface=self.iface, verbose=False)
             self._inc_count()
             return True
-        except Exception:
+        except Exception as e:
+            _log.warning("send_l2 on %s failed: %s", self.iface, e)
             return False
 
     def send_raw(self, data) -> bool:
@@ -31,7 +35,8 @@ class PacketSender:
             sendp(Ether(data), iface=self.iface, verbose=False)
             self._inc_count()
             return True
-        except Exception:
+        except Exception as e:
+            _log.warning("send_raw on %s failed: %s", self.iface, e)
             return False
 
     def _rate_limit(self) -> bool:

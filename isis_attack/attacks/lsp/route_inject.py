@@ -23,7 +23,8 @@ class RouteInjectAttack(BaseAttack):
         lsp_id = self.config.lsp_id
         if not lsp_id:
             lsp_id = f"{self.config.sys_id}.00-00"
-        auth_type = {"none": 0, "plain": 1, "md5": 2}.get(self.config.auth_type, 0)
+        from isis_attack.core.auth import AUTH_NAME_TO_CODE
+        auth_type = AUTH_NAME_TO_CODE.get(self.config.auth_type, 0)
         auth_key = self.config.auth_key.encode() if self.config.auth_key else b""
         pkt = build_lsp_with_tlvs(
             sys_id=self.config.sys_id,

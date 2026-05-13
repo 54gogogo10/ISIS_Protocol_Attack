@@ -20,7 +20,6 @@ class FloodAttack(BaseAttack):
             self._senders.append(PacketSender(
                 iface=self.config.iface, packet_rate=self.config.packet_rate, max_packets=0,
             ))
-        self._stop_event = threading.Event()
         self._flood_pkt = build_iih_packet(
             sys_id=self.config.sys_id, area_addr=self.config.area_addr,
             src_mac=self._src_mac, level=self.config.level,

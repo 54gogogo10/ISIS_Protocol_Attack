@@ -201,10 +201,15 @@ def build_iih_packet(
 
 
 def _compute_lsp_checksum(lsp_body: bytes) -> int:
-    """Compute ISIS LSP 16-bit checksum (simple sum of 16-bit words).
+    """Compute ISIS LSP 16-bit checksum.
 
-    Per ISO 10589: covers from Source ID (after lifetime) to end of LSP.
-    The checksum field (offset 12 into source-id area) is zeroed.
+    Uses a simple additive sum of 16-bit words. Note: this differs from
+    the ISO 10589 Fletcher-based checksum, but FRR 8.4 accepts it.
+    For full interoperability with other ISIS implementations (Cisco IOS,
+    JunOS), use the ISO checksum algorithm instead.
+
+    Covers from Source ID (after lifetime) to end of LSP. The checksum
+    field (offset 12 into source-id area) is zeroed for computation.
     """
     body = lsp_body[2:]  # skip lifetime field
     body = body[:12] + b"\x00\x00" + body[14:]

@@ -64,6 +64,6 @@ class BaseAttack(ABC):
         return AttackResult(
             success=rounds > 0,
             packets_sent=total_sent,
-            target_affected=False,
+            target_affected=self.verify(),
             details=f"{self.name}: {rounds} rounds, {total_sent} packets sent",
         )

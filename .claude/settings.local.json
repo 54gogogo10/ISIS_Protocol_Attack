@@ -39,7 +39,14 @@
       "Bash(docker exec *)",
       "Bash(python -m pytest tests/integration/ -v --tb=short)",
       "Bash(python -m pytest tests/integration/test_topology_attacks.py::test_isis_neighbor_up_r1 tests/integration/test_topology_attacks.py::test_isis_neighbor_up_r2 tests/integration/test_topology_attacks.py::test_spf_recalc_causes_spf_runs -v --tb=long)",
-      "Bash(Start-Sleep -Seconds 20)"
+      "Bash(Start-Sleep -Seconds 20)",
+      "Bash(wait)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f'LSP: {l.get\\(\\\\\"lsp\\\\\",{}\\).get\\(\\\\\"id\\\\\",\\\\\"?\\\\\"\\)} seq={l.get\\(\\\\\"seq-number\\\\\",\\\\\"?\\\\\"\\)} hostname={l.get\\(\\\\\"hostname\\\\\",\\\\\"?\\\\\"\\)} area={l.get\\(\\\\\"area-addr\\\\\",\\\\\"?\\\\\"\\)}'\\) for a in d.get\\('areas',[]\\) for l in a.get\\('levels',[]\\) if l.get\\('lsp'\\)]\")",
+      "Bash(Select-Object -Skip 2)",
+      "Bash(python -m json.tool)",
+      "Bash(grep -v \"^$\")",
+      "Bash(python -m pytest tests/integration/test_topology_attacks.py::test_08_route_inject_lsp_correct tests/integration/test_topology_attacks.py::test_09_max_seq_uses_ffffffff tests/integration/test_topology_attacks.py::test_10_purge_lsp_lifetime_zero -v --tb=short)",
+      "Bash(python -m pytest tests/integration/ tests/unit/ -v --tb=short)"
     ]
   }
 }

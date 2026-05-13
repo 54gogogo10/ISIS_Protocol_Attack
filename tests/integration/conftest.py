@@ -105,6 +105,45 @@ def get_routes_on(container: str, prefix: str = "172.31.0") -> list:
     return matched
 
 
+def find_lsp_in_db(container: str, lsp_id_substr: str) -> dict | None:
+    """Search for an LSP whose ID contains the given substring. Returns the first match."""
+    db = get_isis_database(container)
+    areas = db.get("areas", [])
+    if isinstance(areas, list):
+        for area_entry in areas:
+            levels = area_entry.get("levels", [])
+            for lvl in levels:
+                lsp = lvl.get("lsp", {})
+                lsp_id = lsp.get("id", "")
+                if lsp_id_substr in lsp_id:
+                    return {**lvl, "area": area_entry.get("area", {})}
+    return None
+
+
+def get_lsp_by_sys_id(container: str, sys_id: str) -> dict | None:
+    """Find LSP by system ID (e.g., 'CCCC.CCCC.CCCC')."""
+    clean = sys_id.replace(".", "")
+    return find_lsp_in_db(container, clean)
+
+
+def get_neighbor_up_count(container: str) -> int:
+    """Count ISIS neighbors in Up state."""
+    nbrs = get_isis_neighbors(container)
+    return sum(1 for n in nbrs if n.get("state") == "Up")
+
+
+def assert_neighbor_stable(container: str, min_neighbors: int = 1,
+                           timeout: int = 10):
+    """Assert that container has at least min_neighbors in Up state, retrying."""
+    ok = wait_for_isis_convergence(container, min_neighbors, timeout)
+    if not ok:
+        nbrs = get_isis_neighbors(container)
+        raise AssertionError(
+            f"{container}: expected >= {min_neighbors} Up neighbors, "
+            f"got {get_neighbor_up_count(container)}: {nbrs}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Topology fixture
 # ---------------------------------------------------------------------------
@@ -126,7 +165,14 @@ def docker_network():
         ["docker", "compose", "-f", compose_path, "up", "-d", "--build"],
         check=True, cwd=project_dir, capture_output=True,
     )
-    time.sleep(20)
+    time.sleep(15)
+
+    # Install tcpdump for packet capture verification
+    for container in [R1, R2]:
+        subprocess.run(
+            ["docker", "exec", container, "apk", "add", "--no-cache", "tcpdump"],
+            capture_output=True, timeout=30,
+        )
 
     # Wait for ISIS convergence
     for container in [R1, R2]:

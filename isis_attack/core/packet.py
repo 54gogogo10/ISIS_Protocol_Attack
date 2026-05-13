@@ -200,6 +200,72 @@ def build_iih_packet(
     return raw_pkt + tlvs
 
 
+def _compute_lsp_checksum(lsp_body: bytes) -> int:
+    """Compute ISIS LSP 16-bit checksum (simple sum of 16-bit words).
+
+    Per ISO 10589: covers from Source ID (after lifetime) to end of LSP.
+    The checksum field (offset 12 into source-id area) is zeroed.
+    """
+    body = lsp_body[2:]  # skip lifetime field
+    body = body[:12] + b"\x00\x00" + body[14:]
+    if len(body) % 2:
+        body += b"\x00"
+    total = sum(struct.unpack(f"!{len(body) // 2}H", body))
+    return total & 0xFFFF
+
+
+def _build_lsp_raw(
+    sys_id: str,
+    lsp_id: str,
+    level: int = 1,
+    sequence: int = 0x00000001,
+    remaining_lifetime: int = 1200,
+    tlvs: bytes = b"",
+    auth_type: int = AUTH_NONE,
+    auth_key: bytes = b"",
+) -> bytes:
+    """Build an ISIS LSP as raw bytes with correct checksum.
+
+    Constructs the LSP body manually, computes checksum over the entire
+    body (including appended TLVs), and returns the complete LSP PDU.
+    """
+    pdu_type = ISIS_TYPE_L1_LSP if level == 1 else ISIS_TYPE_L2_LSP
+
+    # Parse lsp_id into bytes: "CCCC.CCCC.CCCC.00-00" -> 8 bytes
+    clean = lsp_id.replace(".", "").replace("-", "")
+    if len(clean) < 16:
+        clean = clean.ljust(16, "0")
+    lsp_id_bytes = bytes.fromhex(clean[:16])
+
+    # Flags / typeblock: bits [7-6]=L1L2(00=L1,01=L2,10=L1L2,11=reserved)
+    # bit[5]=overload, bit[4]=attached
+    typeblock = 0x03  # L1 IS
+
+    # Build LSP body (without checksum)
+    lsp_body = (
+        struct.pack("!H", remaining_lifetime)    # u16 remaining_lifetime
+        + lsp_id_bytes                           # 8 bytes lsp_id
+        + struct.pack("!I", sequence)            # u32 sequence
+        + struct.pack("!H", 0)                   # u16 checksum (placeholder)
+        + struct.pack("!B", typeblock)           # u8 typeblock
+        + tlvs                                    # TLVs
+    )
+
+    # Compute and patch checksum
+    chk = _compute_lsp_checksum(lsp_body)
+    lsp_body = lsp_body[:14] + struct.pack("!H", chk) + lsp_body[16:]
+
+    # ISIS common header
+    sid = _sys_id_bytes(sys_id) if sys_id != "0000.0000.0000" else b"\x00" * 6
+    id_len = len(sid)
+    hdr_len = 8 + id_len
+    isis_hdr = struct.pack(
+        "!BBBBBBBB", 0x83, hdr_len, 1, id_len, pdu_type, 1, 0, 3
+    ) + sid
+
+    return isis_hdr + lsp_body
+
+
 def build_lsp_packet(
     sys_id: str,
     lsp_id: str,
@@ -211,28 +277,22 @@ def build_lsp_packet(
     auth_type: int = AUTH_NONE,
     auth_key: bytes = b"",
 ):
-    """Build a complete ISIS LSP PDU."""
+    """Build a complete ISIS LSP PDU (L2 + ISIS + LSP body + correct checksum)."""
     dst_mac = _build_level_mac(level)
-    pdu_type = ISIS_TYPE_L1_LSP if level == 1 else ISIS_TYPE_L2_LSP
-    lsp_cls = ISIS_L1_LSP if level == 1 else ISIS_L2_LSP
+    dst_bytes = bytes(int(b, 16) for b in dst_mac.split(":"))
+    src_bytes = bytes(int(b, 16) for b in src_mac.split(":"))
 
-    lsp = lsp_cls(
-        pdulength=1492,
-        lifetime=remaining_lifetime,
-        lspid=lsp_id,
-        seqnum=sequence,
-        checksum=0,
-        typeblock=0x03,
+    isis_pdu = _build_lsp_raw(
+        sys_id=sys_id, lsp_id=lsp_id, level=level,
+        sequence=sequence, remaining_lifetime=remaining_lifetime,
+        tlvs=tlvs, auth_type=auth_type, auth_key=auth_key,
     )
 
-    pkt = Ether(dst=dst_mac, src=src_mac) / _build_llc() / ISIS_CommonHdr(pdutype=pdu_type) / lsp
-    raw_pkt = bytes(pkt)
+    # 802.3 LLC encapsulation
+    payload = struct.pack("!BBB", 0xFE, 0xFE, 0x03) + isis_pdu
+    eth = dst_bytes + src_bytes + struct.pack("!H", len(payload)) + payload
 
-    full = raw_pkt + tlvs
-    if auth_key and auth_type != AUTH_NONE:
-        full += build_auth_tlv(auth_type, auth_key, full)
-
-    return full
+    return eth
 
 
 def build_lsp_with_tlvs(
@@ -248,12 +308,15 @@ def build_lsp_with_tlvs(
     network_mask: str = "255.255.255.0",
     auth_type: int = AUTH_NONE,
     auth_key: bytes = b"",
+    area_addr: str = "49.0001",
 ):
     """Build a complete LSP with IP reachability TLVs.
 
     This is the high-level builder used by attack modules.
+    Must include Area Addresses TLV (type 1) for FRR acceptance.
     """
     tlvs = b""
+    tlvs += _build_area_tlv(area_addr)
     tlvs += _build_protocols_tlv()
     tlvs += _build_hostname_tlv(sys_id.replace(".", "-"))
 

@@ -1,0 +1,46 @@
+services:
+  r1:
+    image: frrouting/frr:latest
+    container_name: isis_r1
+    cap_add: [NET_ADMIN, SYS_ADMIN]
+    networks:
+      isis_net:
+        ipv4_address: 172.31.0.2
+    volumes:
+      - ./frr/r1/daemons:/etc/frr/daemons
+      - ./frr/r1/frr.conf:/etc/frr/frr.conf
+
+  r2:
+    image: frrouting/frr:latest
+    container_name: isis_r2
+    cap_add: [NET_ADMIN, SYS_ADMIN]
+    networks:
+      isis_net:
+        ipv4_address: 172.31.0.3
+    volumes:
+      - ./frr/r2/daemons:/etc/frr/daemons
+      - ./frr/r2/frr.conf:/etc/frr/frr.conf
+
+  attacker:
+    build:
+      context: .
+      dockerfile: Dockerfile.attacker
+    image: isis-attacker:local
+    container_name: isis_attacker
+    cap_add: [NET_ADMIN, NET_RAW]
+    networks:
+      isis_net:
+        ipv4_address: 172.31.0.10
+    volumes:
+      - ../../:/app
+    working_dir: /app
+    command: tail -f /dev/null
+    environment:
+      - PYTHONPATH=/app
+
+networks:
+  isis_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24

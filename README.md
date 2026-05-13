@@ -1,166 +1,161 @@
-# ISIS Protocol Attack Simulator
+# ISIS 协议攻击模拟器
 
-A comprehensive IS-IS (Intermediate System to Intermediate System) protocol attack simulation framework for security research, education, and penetration testing. Supports 13 attack types across 4 categories with both CLI and GUI interfaces.
+IS-IS（中间系统到中间系统）协议攻击模拟与安全研究工具。基于 Python，支持 CLI + GUI 双界面，覆盖 4 大类 13 种攻击方式。
 
-## Features
+> **免责声明**：本工具仅供安全研究、教育用途和授权渗透测试使用。使用者应确保在**合法授权**的网络环境中运行，并遵守所在国家/地区的法律法规。作者不对任何未经授权的使用、滥用或由此产生的后果承担责任。**请勿在未授权的网络或生产环境中使用本工具。**
 
-- **13 Attack Types** -- Adjacency attacks, LSP attacks, DoS attacks, and protocol-level attacks
-- **L2 Transport** -- Raw L2 packet injection and sniffing via Npcap
-- **TLV Encoding** -- Full IS-IS TLV encoding/decoding support (TLV 1-22, 128-134)
-- **IS-IS Authentication** -- Supports plaintext (TLV 10) and HMAC-MD5 (TLV 133) authentication modes
-- **ARP Spoof Engine** -- MITM positioning via ARP cache poisoning
-- **Passive & Active Modes** -- Passive sniffing (hub) or active ARP spoof positioning
-- **GUI Interface** -- Tkinter-based control panel for attack selection and configuration
-- **CLI Interface** -- Click-based command-line interface with all 13 attacks
-- **YAML Configuration** -- Support for configuration files with CLI override
+## 特性
 
-## Quick Start
+- **13 种攻击类型** — 覆盖邻接关系、LSP、DoS、协议级操控 4 大类
+- **L2 传输** — 基于 Npcap/AF_PACKET 的原始 L2 报文注入与嗅探
+- **TLV 编码** — 完整的 IS-IS TLV 编解码（类型 1-22, 128-137）
+- **IS-IS 认证** — 支持明文（TLV 10）和 HMAC-MD5（TLV 133）认证
+- **ARP 欺骗引擎** — 通过 ARP 缓存投毒实现中间人定位
+- **双嗅探模式** — 集线器环境混杂嗅探 / 交换环境 ARP 欺骗
+- **GUI 操作面板** — 基于 Tkinter 的可视化攻击选择与配置界面
+- **CLI 命令行** — 基于 Click 的 13 子命令命令行接口
+- **YAML 配置** — 支持配置文件 + CLI 参数覆盖
+
+## 快速开始
 
 ```bash
-# Install from source
+# 从源码安装
 pip install .
 
-# CLI usage
+# 命令行使用
 isis-attack --help
 isis-attack iih-inject --iface eth0 --target 01:80:C2:00:00:14
 
-# Launch GUI
+# 启动 GUI
 python -m isis_attack
 ```
 
-## Attack Types
+## 攻击类型
 
-| Category | Attack Name | Description |
-|----------|-------------|-------------|
-| **Adjacency** | `iih-inject` | Inject forged IIH (IS-IS Hello) packets to establish unauthorized adjacencies |
-| **Adjacency** | `adjacency-break` | Send crafted IIH packets with mismatched parameters to break existing adjacencies |
-| **Adjacency** | `dis-hijack` | Manipulate DIS election by forging IIH packets with high priority |
-| **LSP** | `route-inject` | Inject fake LSPs with crafted route information |
-| **LSP** | `max-seq` | Send LSPs with maximum sequence number to suppress legitimate updates |
-| **LSP** | `purge-lsp` | Send purge LSPs (zero remaining lifetime) to remove LSPs from the LSDB |
-| **LSP** | `fight-back` | Simulate LSP fight-back behavior during route poisoning |
-| **LSP** | `overload-bit` | Set the overload bit in LSPs to trigger traffic blackholing |
-| **DoS** | `flood` | Flood the network with a high rate of IS-IS packets |
-| **DoS** | `spf-recalc` | Trigger repeated SPF calculations by rapidly changing LSP content |
-| **DoS** | `db-overflow` | Exhaust the IS-IS LSDB by injecting many LSPs |
-| **Protocol** | `mitm` | Man-in-the-middle attack between two IS-IS routers |
-| **Protocol** | `replay` | Capture and replay IS-IS packets |
+| 类别 | 攻击名称 | 描述 | 攻击手法 |
+|------|---------|------|---------|
+| **邻接关系** | `iih-inject` | IIH 注入攻击 | 发送伪造 IIH 建立未授权 IS-IS 邻接关系 |
+| **邻接关系** | `adjacency-break` | 邻接破坏攻击 | 发送畸形 IIH（错误 Area + Hold=0）破坏合法邻接 |
+| **邻接关系** | `dis-hijack` | DIS 抢占攻击 | 发送 Priority=127 的 IIH 抢占 DIS 角色 |
+| **LSP** | `route-inject` | 路由注入攻击 | 注入含毒化 IP Reachability TLV 的 LSP 篡改路由表 |
+| **LSP** | `max-seq` | 最大序列号攻击 | 发送 Sequence=0xFFFFFFFF 的 LSP 覆盖合法 LSP |
+| **LSP** | `purge-lsp` | LSP 清除攻击 | 发送 Remaining Lifetime=0 的 LSP 迫使目标清除 LSP |
+| **LSP** | `fight-back` | 对抗攻击 | 持续注入递增序列号的对抗 LSP，阻止合法 LSP 传播 |
+| **LSP** | `overload-bit` | 过载位攻击 | 设置 LSP overload-bit 使目标路由器被排除在 SPF 之外 |
+| **DoS** | `flood` | 泛洪攻击 | 多线程高频发送 IIH/LSP 报文耗尽路由器 CPU |
+| **DoS** | `spf-recalc` | SPF 重计算攻击 | 持续注入变化的 LSP 迫使路由器反复执行 SPF 计算 |
+| **DoS** | `db-overflow` | 数据库溢出攻击 | 注入大量 LSP 填满链路状态数据库 |
+| **协议操控** | `mitm` | 中间人攻击 | 拦截 ISIS PDU → 篡改 → 转发（支持 drop/modify/forward） |
+| **协议操控** | `replay` | 重放攻击 | 从 pcap 文件读取 ISIS 报文重新发送，引发路由震荡 |
 
-## IS-IS Authentication Support
+## 配置参数
 
-The simulator supports two IS-IS authentication modes:
+攻击可通过以下方式配置（优先级：默认值 → YAML → CLI）：
 
-- **Plaintext (TLV 10)** -- Cleartext password authentication for Hello, CSNP, and PSNP PDUs
-- **HMAC-MD5 (TLV 133)** -- Cryptographic authentication per RFC 5304
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--iface` | (必填) | 网络接口名称 |
+| `--target` | (必填) | 目标 MAC 地址 |
+| `--sys-id` | `1921.6800.1001` | IS-IS 系统 ID |
+| `--area-addr` | `49.0001` | 区域地址 |
+| `--level` | `1` | IS-IS 级别（1 或 2） |
+| `--sniff-duration` | `30` | 嗅探持续时间（秒） |
+| `--packet-rate` | `10` | 发包速率（包/秒） |
+| `--max-packets` | `0` | 最大发包数（0=无限制） |
+| `--mode` | `passive` | 攻击模式：passive 或 active |
+| `--sniff-mode` | `hub` | 嗅探模式：hub 或 arp_spoof |
 
-Authentication can be configured per attack via CLI flags or YAML config.
-
-## Configuration
-
-Attacks can be configured via:
-- **CLI parameters** -- Direct command-line flags (see `isis-attack <attack> --help`)
-- **YAML config file** -- Reusable configuration files (using `--config` parameter)
-
-### Common configuration parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--iface` | (required) | Network interface for packet injection |
-| `--target` | (required) | Target MAC address |
-| `--sys-id` | `1921.6800.1001` | IS-IS System ID |
-| `--area-addr` | `49.0001` | Area address |
-| `--level` | `1` | IS-IS level (1 or 2) |
-| `--sniff-duration` | `30` | Sniffing duration in seconds |
-| `--packet-rate` | `10` | Packet injection rate (packets/sec) |
-| `--max-packets` | `0` | Maximum packets to send (0 = unlimited) |
-| `--mode` | `passive` | Operating mode: passive or active |
-
-## Build
-
-```powershell
-# Build standalone executable (requires Npcap installer in assets/)
-.\build.ps1
-```
-
-## Tech Stack
-
-- **Python 3.10+**
-- **Scapy** -- Packet manipulation library
-- **Click** -- CLI framework
-- **PyYAML** -- Configuration parsing
-- **pcap-ct** -- PCAP capture backend
-- **Tkinter** -- GUI toolkit (stdlib)
-- **pytest** -- Testing framework
-
-## Requirements
-
-- Npcap (Windows) / AF_PACKET (Linux) for raw L2 packet injection
-- Docker Desktop + FRRouting for integration tests
-- Administrative/root privileges for L2 operations
-
-## Testing
+## 测试
 
 ```bash
-# Unit tests (79 tests)
+# 单元测试 (79 项)
 pytest tests/unit/ -v
 
-# Integration tests — requires Docker Desktop + FRRouting
+# 集成测试 — 需要 Docker Desktop + FRRouting
 docker compose -f docker/topo1-single-area/docker-compose.yml up -d
 pytest tests/integration/ -v    # 17 tests
 docker compose -f docker/topo1-single-area/docker-compose.yml down -v
 
-# Full suite: 96 tests
+# 全部测试 (96 项)
 pytest tests/unit/ tests/integration/ -v
 ```
 
-Integration tests run against real FRR routers in Docker with ISIS Level-1 broadcast LAN. Each attack verifies packet delivery and post-attack neighbor stability.
+集成测试通过 Docker FRR 容器构建真实 ISIS 拓扑（L1 广播 LAN，2 台路由器 + 1 台攻击机），验证每种攻击的报文投递和攻击后邻居状态稳定性。
 
-## Architecture
+## 架构
 
 ```
 isis_attack/
-  __init__.py          # Package init, version
-  __main__.py          # GUI entry (python -m isis_attack)
+  __init__.py          # 包初始化、版本号
+  __main__.py          # GUI 入口 (python -m isis_attack)
   core/
-    auth.py            # IS-IS auth (plain TLV 10, HMAC-MD5 TLV 133)
-    packet.py          # PDU construction (IIH/LSP + TLV builders + checksum)
-    neighbor.py        # IS neighbor state machine (Down/Init/Up)
-    sniffer.py         # L2 sniffer (pcap-ct, thread-safe)
-    arp_spoof.py       # ARP spoof engine (MAC discovery + restore)
-    active_engine.py   # Active adjacency engine (sniff→adjacency→LSP inject)
+    auth.py            # IS-IS 认证 (明文 TLV 10 / HMAC-MD5 TLV 133)
+    packet.py          # PDU 构造 (IIH/LSP + TLV 构建 + 校验和)
+    neighbor.py        # IS 邻居状态机 (Down/Init/Up)
+    sniffer.py         # L2 嗅探器 (pcap-ct, 线程安全)
+    arp_spoof.py       # ARP 欺骗引擎 (MAC 学习 + 恢复)
+    active_engine.py   # 主动模式引擎 (嗅探→邻接→LSP 注入)
   attacks/
-    base.py            # BaseAttack (setup/launch/verify/teardown lifecycle)
+    base.py            # BaseAttack 抽象基类 (setup/launch/verify/teardown)
     adjacency/         # iih-inject, adjacency-break, dis-hijack
     lsp/               # route-inject, max-seq, purge-lsp, fight-back, overload-bit
     dos/               # flood, spf-recalc, db-overflow
     protocol/          # mitm, replay
   config/
-    config.py          # Config loader (default→YAML→CLI 3-layer merge)
-    types.py           # 6 dataclass config types
+    config.py          # 配置加载器 (默认→YAML→CLI 三层合并)
+    types.py           # 6 个 dataclass 配置类型
   network/
-    adapter.py         # L2 NIC adapter (MAC/IP)
-    sender.py          # PacketSender (Scapy sendp, rate-limited)
+    adapter.py         # L2 网卡抽象 (MAC/IP)
+    sender.py          # PacketSender (Scapy sendp, 速率限制)
   cli/
-    main.py            # Click CLI entry
-    commands.py        # 13 attack subcommands
-    formatters.py      # Output formatters (table/json)
+    main.py            # Click CLI 入口
+    commands.py        # 13 攻击子命令注册
+    formatters.py      # 输出格式化 (table/json)
   gui/
-    app.py             # Main window (1100×720)
-    attack_tree.py     # 4-category attack tree
-    config_form.py     # Dynamic config form
-    log_panel.py       # Thread-safe log
-    runner.py          # Background attack thread
-    pcap_tools.py      # PCAP import
-    styles.py          # Color/font constants
+    app.py             # 主窗口 (1100×720)
+    attack_tree.py     # 4 类攻击树
+    config_form.py     # 动态配置表单
+    log_panel.py       # 线程安全日志面板
+    runner.py          # 后台攻击线程
+    pcap_tools.py      # PCAP 文件导入
+    styles.py          # 颜色/字体常量
   utils/
-    validators.py      # SysID/AreaAddr/MAC validators
+    validators.py      # SysID/AreaAddr/MAC 校验
 tests/
-  unit/                # 79 unit tests
-  integration/         # 17 Docker FRR integration tests
+  unit/                # 79 项单元测试
+  integration/         # 17 项 Docker FRR 集成测试
 docker/
-  topo1-single-area/   # 2 FRR routers + attacker container
+  topo1-single-area/   # 2 FRR 路由器 + 1 攻击机
 ```
 
-## License
+## 技术栈
+
+| 组件 | 技术 |
+|------|------|
+| 语言 | Python 3.10+ |
+| 协议引擎 | Scapy + 手动字节级 TLV 构建 |
+| 认证 | hashlib + hmac（纯标准库） |
+| 报文捕获 | pcap-ct + Npcap (Windows) / AF_PACKET (Linux) |
+| CLI | Click（13 子命令） |
+| GUI | Tkinter + ttk |
+| 打包 | PyInstaller `--onefile` |
+| 测试 | pytest（96 tests: 79 unit + 17 integration） |
+| 配置 | YAML（默认→YAML→CLI 三层优先级） |
+| 集成拓扑 | Docker + FRRouting |
+
+## 依赖
+
+- Npcap (Windows) / AF_PACKET (Linux) — L2 原始包注入
+- Docker Desktop + FRRouting — 集成测试环境
+- 管理员/root 权限 — L2 操作
+
+## 构建
+
+```powershell
+# 构建独立可执行文件（需先将 Npcap 安装程序放入 assets/）
+.\build.ps1
+```
+
+## 许可证
 
 MIT

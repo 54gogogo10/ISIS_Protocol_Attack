@@ -1,4 +1,10 @@
 BG = "#1e1e2e"
 FG = "#cdd6f4"
 ACCENT = "#89b4fa"
+ERROR = "#f38ba8"
+SUCCESS = "#a6e3a1"
+WARN = "#fab387"
 FONT = ("Consolas", 10)
+FONT_SM = ("Consolas", 9)
+FONT_BOLD = ("Consolas", 10, "bold")
+PADDING = {"padx": 5, "pady": 3}

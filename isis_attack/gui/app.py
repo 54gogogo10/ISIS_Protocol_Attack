@@ -218,7 +218,10 @@ class MainWindow:
 
     def _on_close(self):
         if self._sniffer is not None:
-            self._sniffer.stop()
+            try:
+                self._sniffer.stop()
+            except Exception:
+                pass
             self._sniffer = None
         self._stop_event.set()
         self.root.destroy()
@@ -231,7 +234,10 @@ class MainWindow:
         if self._sniffer is not None:
             return
         cfg = self._form.get_config_dict()
-        iface = str(cfg.get("iface", "eth0"))
+        from .config_form import get_network_interfaces
+        ifaces = get_network_interfaces()
+        default_iface = ifaces[0] if ifaces else "eth0"
+        iface = str(cfg.get("iface", default_iface))
         dur = int(cfg.get("sniff_duration", 30))
         self._log_queue.put(("SYSTEM", f"开始在 {iface} 嗅探 ISIS 报文 (最多 {dur}s)..."))
         self._stop_sniff_btn.config(state=tk.NORMAL)
@@ -248,7 +254,7 @@ class MainWindow:
     def _poll_sniff_progress(self):
         if self._sniffer is None:
             return
-        live = len(self._sniffer.results)
+        live = len(self._sniffer.results) if self._sniffer.results else 0
         self._count_var.set(f"已捕获: {live}")
         if self._sniffer.running:
             self.root.after(200, self._poll_sniff_progress)
@@ -264,7 +270,7 @@ class MainWindow:
     def _sniff_done(self):
         self._stop_sniff_btn.config(state=tk.DISABLED)
         self._progress.stop()
-        live = len(self._sniffer.results) if self._sniffer else 0
+        live = len(self._sniffer.results) if self._sniffer.results else 0 if self._sniffer else 0
         if self._sniffer is not None:
             from .pcap_tools import parse_sniff_results, PacketBrowser
             packets = parse_sniff_results(self._sniffer)

@@ -1,9 +1,128 @@
 """动态配置表单 — 根据攻击类型动态生成参数字段。"""
 
+import json
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from typing import Any
 from .styles import FONT_LABEL, FONT_ENTRY, PAD_FORM, PAD_OUTER, SECTION_GAP
+
+
+# =====================================================================
+# 路由条目编辑器
+# =====================================================================
+
+class RoutesHolder:
+    def __init__(self, routes=None):
+        self.routes: list[dict] = list(routes) if routes else []
+
+    def get(self) -> list[dict]:
+        return list(self.routes)
+
+    def set(self, value):
+        if isinstance(value, str):
+            try:
+                self.routes = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                self.routes = []
+        elif isinstance(value, list):
+            self.routes = list(value)
+
+
+class RoutesEditor(tk.Toplevel):
+    def __init__(self, parent, holder: RoutesHolder):
+        super().__init__(parent)
+        self.title("编辑伪造路由条目")
+        self.geometry("600x360")
+        self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
+        self._holder = holder
+        self._routes: list[dict] = [r.copy() for r in holder.routes]
+        self._build_ui()
+        self._refresh()
+
+    def _build_ui(self):
+        cols = ("network", "mask", "metric")
+        self._tree = ttk.Treeview(self, columns=cols, show="headings", selectmode="browse", height=10)
+        for col, hdr, w in [("network", "目标网络", 160), ("mask", "掩码", 130), ("metric", "Metric", 80)]:
+            self._tree.heading(col, text=hdr)
+            self._tree.column(col, width=w, anchor="center")
+        self._tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 0))
+
+        bar = ttk.Frame(self)
+        bar.pack(fill=tk.X, padx=10, pady=8)
+        ttk.Button(bar, text="添加", command=self._on_add).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bar, text="编辑", command=self._on_edit).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bar, text="删除", command=self._on_delete).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bar, text="保存", command=self._on_save).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(bar, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=2)
+
+    def _refresh(self):
+        for row in self._tree.get_children():
+            self._tree.delete(row)
+        for r in self._routes:
+            self._tree.insert("", tk.END, values=(r.get("network", ""), r.get("mask", "255.255.255.0"), r.get("metric", 10)))
+
+    def _on_add(self):
+        dlg = _RouteDialog(self, None)
+        if dlg.result:
+            self._routes.append(dlg.result)
+            self._refresh()
+
+    def _on_edit(self):
+        sel = self._tree.selection()
+        if sel:
+            idx = self._tree.index(sel[0])
+            dlg = _RouteDialog(self, self._routes[idx])
+            if dlg.result:
+                self._routes[idx] = dlg.result
+                self._refresh()
+
+    def _on_delete(self):
+        sel = self._tree.selection()
+        if sel:
+            idx = self._tree.index(sel[0])
+            self._tree.delete(sel[0])
+            del self._routes[idx]
+
+    def _on_save(self):
+        self._holder.routes = list(self._routes)
+        self.destroy()
+
+
+class _RouteDialog(tk.Toplevel):
+    def __init__(self, parent, existing: dict | None):
+        super().__init__(parent)
+        self.title("编辑路由" if existing else "添加路由")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+        self.result: dict | None = None
+        r = existing or {"network": "10.0.0.0", "mask": "255.255.255.0", "metric": 10}
+        self._vars: dict[str, tk.StringVar] = {}
+        row = 0
+        for label, key, val in [("目标网络:", "network", r.get("network", "")),
+                                 ("掩码:", "mask", r.get("mask", "255.255.255.0")),
+                                 ("Metric:", "metric", str(r.get("metric", 10)))]:
+            ttk.Label(self, text=label, font=FONT_LABEL).grid(row=row, column=0, sticky=tk.W, padx=10, pady=4)
+            v = tk.StringVar(value=str(val))
+            ttk.Entry(self, textvariable=v, font=FONT_ENTRY, width=24).grid(row=row, column=1, sticky=tk.EW, padx=10, pady=4)
+            self._vars[key] = v
+            row += 1
+        bar = ttk.Frame(self)
+        bar.grid(row=row, column=0, columnspan=2, pady=10)
+        ttk.Button(bar, text="确定", command=self._on_ok).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bar, text="取消", command=self.destroy).pack(side=tk.LEFT, padx=4)
+        self.wait_window()
+
+    def _on_ok(self):
+        try:
+            self.result = {"network": self._vars["network"].get(),
+                           "mask": self._vars["mask"].get(),
+                           "metric": int(self._vars["metric"].get())}
+        except ValueError:
+            self.result = None
+        self.destroy()
 
 
 def get_network_interfaces() -> list[str]:
@@ -72,7 +191,8 @@ FIELD_META: dict[str, dict] = {
     "lsp_count":           {"widget": "spinbox", "label": "注入 LSP 数量", "from_": 1, "to": 100000, "default": 1000},
 
     # -- LSP 专属补充 --
-    "overload_bit": {"widget": "check", "label": "设置 Overload Bit"},
+    "overload_bit":      {"widget": "check", "label": "设置 Overload Bit"},
+    "external_routes":   {"widget": "routes", "label": "伪造路由条目"},
 
     # -- MITM 专属 --
     "target_a":    {"widget": "entry",   "label": "路由器 A IP"},
@@ -99,7 +219,8 @@ SPECIFIC_FIELDS: dict[str, list[str]] = {
     "adjacency-break":  ["hello_interval", "hold_timer", "priority"],
     "dis-hijack":       ["hello_interval", "hold_timer", "priority"],
     "route-inject":     ["lsp_id", "sequence", "remaining_lifetime", "metric",
-                         "network_addr", "network_mask", "auth_type", "auth_key"],
+                         "network_addr", "network_mask", "external_routes",
+                         "auth_type", "auth_key"],
     "max-seq":          ["lsp_id", "sequence", "remaining_lifetime",
                          "metric", "network_addr", "network_mask"],
     "purge-lsp":        ["lsp_id", "sequence", "remaining_lifetime",
@@ -131,6 +252,9 @@ def build_config_dict(widgets: dict, meta: dict[str, dict]) -> dict[str, Any]:
             continue
         m = meta.get(name, {})
         wtype = m.get("widget", "entry")
+        if wtype == "routes":
+            result[name] = raw  # raw is list[dict]
+            continue
         target_type = m.get("type", None)
         if wtype == "spinbox":
             try:
@@ -392,7 +516,30 @@ def _build_field_row(parent: ttk.Frame, field_name: str, row: int, form: ConfigF
             ttk.Radiobutton(f, text=c, variable=var, value=c).pack(side=tk.LEFT, padx=4)
         form._widgets[field_name] = var
 
+    elif wtype == "routes":
+        holder = RoutesHolder()
+        count_var = tk.StringVar(value="未配置")
+        f = ttk.Frame(parent)
+        f.grid(row=row, column=1, sticky=tk.EW, pady=PAD_FORM)
+        ttk.Button(f, text="编辑路由...",
+                   command=lambda h=holder, cv=count_var: _open_routes_editor(parent, h, cv)
+                   ).pack(side=tk.LEFT)
+        ttk.Label(f, textvariable=count_var, font=FONT_LABEL,
+                  foreground="gray").pack(side=tk.LEFT, padx=6)
+        form._widgets[field_name] = holder
+        form._widgets[f"_{field_name}_label"] = count_var
+
     parent.columnconfigure(1, weight=1)
+
+
+def _update_routes_label(holder: RoutesHolder, var: tk.StringVar):
+    n = len(holder.routes)
+    var.set(f"{n} 条路由" if n else "未配置")
+
+
+def _open_routes_editor(parent: ttk.Frame, holder: RoutesHolder, count_var: tk.StringVar):
+    RoutesEditor(parent.winfo_toplevel(), holder)
+    _update_routes_label(holder, count_var)
 
 
 # =====================================================================

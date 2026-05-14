@@ -78,23 +78,23 @@ def _parse_tlvs(data: bytes) -> dict:
 # -- 嗅探 --
 
 def sniff_isis(iface: str, timeout: int = 10) -> list[dict]:
+    """在指定接口嗅探 ISIS 报文（无 BPF 过滤器，在 Python 中过滤）。"""
     results = []
     try:
         from scapy.all import sniff
-        for pkt in sniff(filter="ether proto 0xFEFE", iface=iface,
-                        timeout=timeout, store=True):
+        for pkt in sniff(iface=iface, timeout=timeout, store=True):
             p = _parse_isis_packet(bytes(pkt))
             if p:
                 results.append(p)
-    except Exception as e:
+    except Exception:
         import traceback; traceback.print_exc()
     return results
 
 
 def sniff_isis_async(iface: str, timeout: int = 60):
+    """异步嗅探 ISIS 报文（无 BPF 过滤器，在解析时过滤）。"""
     from scapy.all import AsyncSniffer
-    s = AsyncSniffer(filter="ether proto 0xFEFE", iface=iface,
-                    timeout=timeout, store=True)
+    s = AsyncSniffer(iface=iface, timeout=timeout, store=True)
     s.start()
     return s
 

@@ -264,7 +264,10 @@ class MainWindow:
     def _on_stop_sniff(self):
         if self._sniffer is not None:
             self._log_queue.put(("SYSTEM", "用户手动停止嗅探"))
-            self._sniffer.stop()
+            try:
+                self._sniffer.stop()
+            except Exception:
+                pass
             self._sniff_done()
 
     def _sniff_done(self):

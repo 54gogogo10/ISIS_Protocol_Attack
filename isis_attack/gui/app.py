@@ -120,6 +120,7 @@ class MainWindow:
                                       lambda: self._form.format_preview(),
                                       export_fn=lambda: self._form.export_pcap())
         right_paned.add(self._preview, weight=1)
+        self._form.set_preview_callback(self._preview.refresh)
 
         # -- 底部状态栏 --
         bottom_bar = ttk.Frame(self.root)

@@ -283,6 +283,7 @@ class ConfigForm(tk.Frame):
         self._attack_name: str | None = None
         self._widgets: dict[str, Any] = {}
         self._sniff_var: tk.StringVar | None = None
+        self._preview_cb = None
 
         # 滚动容器
         self._canvas = tk.Canvas(self, highlightthickness=0)
@@ -342,6 +343,10 @@ class ConfigForm(tk.Frame):
 
     def format_preview(self) -> str:
         return _format_isis_preview(self)
+
+    def set_preview_callback(self, cb):
+        """设置路由变化后的预览刷新回调。"""
+        self._preview_cb = cb
 
     def export_pcap(self) -> bool:
         """导出当前构造的报文为 pcap 文件。"""
@@ -547,7 +552,8 @@ def _build_field_row(parent: ttk.Frame, field_name: str, row: int, form: ConfigF
         f = ttk.Frame(parent)
         f.grid(row=row, column=1, sticky=tk.EW, pady=PAD_FORM)
         ttk.Button(f, text="编辑路由...",
-                   command=lambda h=holder, cv=count_var: _open_routes_editor(parent, h, cv)
+                   command=lambda h=holder, cv=count_var, fm=form:
+                       _open_routes_editor(parent, h, cv, fm)
                    ).pack(side=tk.LEFT)
         ttk.Label(f, textvariable=count_var, font=FONT_LABEL,
                   foreground="gray").pack(side=tk.LEFT, padx=6)
@@ -562,9 +568,13 @@ def _update_routes_label(holder: RoutesHolder, var: tk.StringVar):
     var.set(f"{n} 条路由" if n else "未配置")
 
 
-def _open_routes_editor(parent: ttk.Frame, holder: RoutesHolder, count_var: tk.StringVar):
+def _open_routes_editor(parent: ttk.Frame, holder: RoutesHolder, count_var: tk.StringVar,
+                        form: "ConfigForm | None" = None):
     RoutesEditor(parent.winfo_toplevel(), holder)
     _update_routes_label(holder, count_var)
+    # Trigger preview refresh if available
+    if form and hasattr(form, "_preview_cb") and form._preview_cb:
+        parent.after(50, form._preview_cb)
 
 
 # =====================================================================
@@ -694,8 +704,20 @@ def _format_isis_preview(form: "ConfigForm") -> str:
         lines.append(f"│ Area Addresses (1): {area}                       │")
         lines.append(f"│ Protocols Supported (129): IPv4 (0xCC)           │")
         lines.append(f"│ Hostname (137): {sys_id}                         │")
-        if net != "0.0.0.0":
+        # Single route (backward compatibility)
+        if net != "0.0.0.0" and net != "":
             lines.append(f"│ IP Int. Reach (128): {net}/{mask} metric={metric}")
+        # External routes from RoutesEditor
+        routes_holder = w.get("external_routes")
+        if routes_holder and hasattr(routes_holder, "routes"):
+            routes = routes_holder.routes
+            if routes:
+                lines.append(f"│ 伪造路由条目 ({len(routes)} 条):")
+                for i, r in enumerate(routes):
+                    r_net = r.get("network", "-")
+                    r_mask = r.get("mask", "255.255.255.0")
+                    r_metric = r.get("metric", 10)
+                    lines.append(f"│   #{i+1} {r_net}/{r_mask} metric={r_metric}")
 
     elif attack in ("flood", "spf-recalc", "db-overflow"):
         dur = _safe_get(w, "duration", "60")

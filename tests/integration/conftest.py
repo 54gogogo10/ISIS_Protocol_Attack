@@ -162,7 +162,7 @@ def docker_network():
         cwd=project_dir, capture_output=True,
     )
     subprocess.run(
-        ["docker", "compose", "-f", compose_path, "up", "-d", "--build"],
+        ["docker", "compose", "-f", compose_path, "up", "-d"],
         check=True, cwd=project_dir, capture_output=True,
     )
     time.sleep(15)

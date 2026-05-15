@@ -454,8 +454,35 @@ class ConfigForm(tk.Frame):
         fields = SPECIFIC_FIELDS.get(attack_name, [])
         for i, name in enumerate(fields):
             _build_field_row(self._specific_frame, name, i, self)
-        # Auto-fill LSP ID from System ID
+        # Attack-specific default overrides
+        self._apply_overrides(attack_name)
+        # Auto-compute fields
         self._auto_fill_lsp_id()
+        self._auto_hold_timer()
+
+    _OVERRIDES: dict[str, dict] = {
+        "max-seq":      {"sequence": "0xFFFFFFFF"},
+        "purge-lsp":    {"remaining_lifetime": "0"},
+        "overload-bit": {"overload_bit": True},
+        "dis-hijack":   {"priority": "127"},
+        "iih-inject":   {"priority": "127"},
+    }
+
+    def _apply_overrides(self, attack_name: str):
+        for key, value in self._OVERRIDES.get(attack_name, {}).items():
+            w = self._widgets.get(key)
+            if w is None:
+                continue
+            try:
+                if isinstance(value, bool):
+                    w.set(value)
+                elif hasattr(w, "set"):
+                    w.set(str(value))
+                elif hasattr(w, "delete"):
+                    w.delete(0, tk.END)
+                    w.insert(0, str(value))
+            except Exception:
+                pass
 
     def _auto_fill_lsp_id(self):
         """根据 System ID 自动生成 LSP ID (xxxx.xxxx.xxxx.00-00)。"""
@@ -479,6 +506,26 @@ class ConfigForm(tk.Frame):
                     if not cur or cur.startswith("1921.6800.1001") or cur == f"{new_sys}.00-00":
                         self._widgets["lsp_id"].set(f"{new_sys}.00-00")
             sys_var.trace_add("write", _on_sys_change)
+
+    def _auto_hold_timer(self):
+        """自动计算 Hold Timer = 3 × Hello Interval。"""
+        if "hold_timer" not in self._widgets or "hello_interval" not in self._widgets:
+            return
+        hi_var = self._widgets["hello_interval"]
+        ht_var = self._widgets["hold_timer"]
+        def _on_hello_change(*args):
+            try:
+                hi = int(hi_var.get())
+                ht_var.set(str(hi * 3))
+            except (ValueError, tk.TclError):
+                pass
+        hi_var.trace_add("write", _on_hello_change)
+        # Set initial value
+        try:
+            hi = int(hi_var.get())
+            ht_var.set(str(hi * 3))
+        except (ValueError, tk.TclError):
+            pass
 
     def _toggle_arp(self):
         if self._sniff_var and self._sniff_var.get() == "arp_spoof":

@@ -449,6 +449,31 @@ class ConfigForm(tk.Frame):
         fields = SPECIFIC_FIELDS.get(attack_name, [])
         for i, name in enumerate(fields):
             _build_field_row(self._specific_frame, name, i, self)
+        # Auto-fill LSP ID from System ID
+        self._auto_fill_lsp_id()
+
+    def _auto_fill_lsp_id(self):
+        """根据 System ID 自动生成 LSP ID (xxxx.xxxx.xxxx.00-00)。"""
+        if "lsp_id" not in self._widgets:
+            return
+        lsid_var = self._widgets["lsp_id"]
+        current = lsid_var.get().strip() if hasattr(lsid_var, "get") else ""
+        if current:  # 用户已手动填写则保留
+            return
+        if "sys_id" in self._widgets:
+            sys_id = self._widgets["sys_id"].get().strip()
+            if sys_id:
+                lsid_var.set(f"{sys_id}.00-00")
+        # 监听 sys_id 变化自动更新 lsp_id
+        if "sys_id" in self._widgets:
+            sys_var = self._widgets["sys_id"]
+            def _on_sys_change(*args):
+                if "lsp_id" in self._widgets:
+                    cur = self._widgets["lsp_id"].get().strip()
+                    new_sys = sys_var.get().strip()
+                    if not cur or cur.startswith("1921.6800.1001") or cur == f"{new_sys}.00-00":
+                        self._widgets["lsp_id"].set(f"{new_sys}.00-00")
+            sys_var.trace_add("write", _on_sys_change)
 
     def _toggle_arp(self):
         if self._sniff_var and self._sniff_var.get() == "arp_spoof":

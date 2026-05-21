@@ -1,7 +1,7 @@
 """ISIS PDU construction and parsing (TLV-encoded, L2 transport)."""
 import struct
+from functools import lru_cache
 from scapy.all import Ether
-from scapy.layers.l2 import LLC
 from scapy.contrib.isis import (
     ISIS_CommonHdr,
     ISIS_L1_LAN_Hello,
@@ -16,6 +16,10 @@ from scapy.contrib.isis import (
 )
 
 from .auth import AUTH_NONE, AUTH_PLAIN, AUTH_MD5, build_auth_tlv
+
+# Pre-built constant bytes (avoids per-call allocations)
+_TLV_PROTOCOLS = b"\x81\x01\xcc"   # TLV type=129, len=1, NLPID=0xCC (IPv4)
+_LLC_BYTES = b"\xFE\xFE\x03"       # DSAP=0xFE, SSAP=0xFE, Ctrl=0x03
 
 # PDU types
 ISIS_TYPE_L1_IIH = 15
@@ -68,8 +72,8 @@ def _build_level_mac(level: int) -> str:
     return ISIS_MAC_L1 if level == 1 else ISIS_MAC_L2
 
 
-def _build_llc() -> LLC:
-    return LLC(dsap=0xFE, ssap=0xFE, ctrl=3)
+def _build_llc():
+    return _LLC_BYTES
 
 
 def build_isis_hdr(pdu_type: int, sys_id: str = "0000.0000.0000",
@@ -83,8 +87,9 @@ def build_isis_hdr(pdu_type: int, sys_id: str = "0000.0000.0000",
     return hdr
 
 
+@lru_cache(maxsize=16)
 def _build_area_tlv(area_addr: str) -> bytes:
-    """Build Area Addresses TLV (type 1)."""
+    """Build Area Addresses TLV (type 1) — cached."""
     addr_parts = area_addr.replace(".", "")
     addr = bytes.fromhex(addr_parts) if len(addr_parts) % 2 == 0 else bytes.fromhex(addr_parts + "0")
     addr_len = len(addr)
@@ -92,8 +97,7 @@ def _build_area_tlv(area_addr: str) -> bytes:
 
 
 def _build_protocols_tlv() -> bytes:
-    """Build Protocols Supported TLV (type 129) for IPv4 (NLPID 0xCC)."""
-    return bytes([TLV_PROTOCOLS, 1, 0xCC])
+    return _TLV_PROTOCOLS
 
 
 def _build_ip_iface_tlv(ip_addr: str) -> bytes:
@@ -131,8 +135,9 @@ def _build_is_neighbors_tlv(sys_ids: list) -> bytes:
     return struct.pack("!BB", TLV_IS_NEIGHBORS, len(value)) + value
 
 
+@lru_cache(maxsize=32)
 def _build_hostname_tlv(hostname: str) -> bytes:
-    """Build Hostname TLV (type 137)."""
+    """Build Hostname TLV (type 137) — cached."""
     name_bytes = hostname.encode("ascii")
     return struct.pack("!BB", TLV_HOSTNAME, len(name_bytes)) + name_bytes
 
@@ -201,22 +206,16 @@ def build_iih_packet(
 
 
 def _compute_lsp_checksum(lsp_body: bytes) -> int:
-    """Compute ISIS LSP 16-bit checksum.
+    """Compute ISIS LSP 16-bit checksum — zero-allocation via memoryview.
 
-    Uses a simple additive sum of 16-bit words. Note: this differs from
-    the ISO 10589 Fletcher-based checksum, but FRR 8.4 accepts it.
-    For full interoperability with other ISIS implementations (Cisco IOS,
-    JunOS), use the ISO checksum algorithm instead.
-
-    Covers from Source ID (after lifetime) to end of LSP. The checksum
-    field (offset 12 into source-id area) is zeroed for computation.
+    Covers from Source ID (after lifetime) to end of LSP.
+    Checksum field at offset 12 into source-id area is zeroed.
     """
-    body = lsp_body[2:]  # skip lifetime field
-    body = body[:12] + b"\x00\x00" + body[14:]
-    if len(body) % 2:
-        body += b"\x00"
-    total = sum(struct.unpack(f"!{len(body) // 2}H", body))
-    return total & 0xFFFF
+    ba = bytearray(lsp_body[2:])
+    ba[12:14] = b"\x00\x00"
+    if len(ba) % 2:
+        ba.append(0)
+    return sum(memoryview(ba).cast("H")) & 0xFFFF
 
 
 def _build_lsp_raw(

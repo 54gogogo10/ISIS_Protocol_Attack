@@ -22,15 +22,15 @@ class FightBackAttack(BaseAttack):
             max_packets=self.config.max_packets,
         )
         self._seq = max(self.config.sequence, 1)
+        self._lsp_id = self.config.lsp_id or f"{self.config.sys_id}.00-00"
 
     def send_one_round(self) -> bool:
         if self._seq < MAX_ISIS_SEQ:
             self._seq += 1
         else:
             self._seq = 1
-        lsp_id = self.config.lsp_id or f"{self.config.sys_id}.00-00"
         pkt = build_lsp_with_tlvs(
-            sys_id=self.config.sys_id, lsp_id=lsp_id,
+            sys_id=self.config.sys_id, lsp_id=self._lsp_id,
             src_mac=self._src_mac, level=self.config.level,
             sequence=self._seq, remaining_lifetime=1200,
             metric=self.config.metric,

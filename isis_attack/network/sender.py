@@ -13,6 +13,7 @@ class PacketSender:
         self.max_packets = max_packets
         self._sent_count = 0
         self._lock = threading.Lock()
+        self._has_max = max_packets > 0
         self._start_time = time.monotonic()
         self._packet_interval = 1.0 / packet_rate if packet_rate > 0 else 0
 
@@ -40,7 +41,7 @@ class PacketSender:
             return False
 
     def _rate_limit(self) -> bool:
-        if self.max_packets > 0:
+        if self._has_max:
             with self._lock:
                 if self._sent_count >= self.max_packets:
                     return False

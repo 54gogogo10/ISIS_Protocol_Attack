@@ -54,12 +54,14 @@ class BaseAttack(ABC):
         return result
 
     def _run_repeated(self) -> AttackResult:
-        deadline = time.time() + self.config.sniff_duration
+        deadline = time.monotonic() + self.config.sniff_duration
         rounds = 0
-        while time.time() < deadline and not self._stop_event.is_set():
+        rate = max(getattr(self.config, "packet_rate", 1), 1)
+        interval = 1.0 / rate
+        while time.monotonic() < deadline and not self._stop_event.is_set():
             if self.send_one_round():
                 rounds += 1
-            time.sleep(1.0 / max(getattr(self.config, 'packet_rate', 1), 1))
+            time.sleep(interval)
         total_sent = self._sender.sent_count if self._sender else 0
         return AttackResult(
             success=rounds > 0,

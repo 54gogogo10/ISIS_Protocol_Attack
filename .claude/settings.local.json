@@ -75,7 +75,10 @@
       "Bash(python -m pytest tests/unit/test_gui_integration.py -v --tb=short)",
       "Bash(python -m pytest tests/ -v --tb=short)",
       "Bash(python -m pytest tests/ -q)",
-      "Bash(python -m pytest tests/integration/ -q)"
+      "Bash(python -m pytest tests/integration/ -q)",
+      "Bash(docker info *)",
+      "Bash(Select-Object -First 3)",
+      "Bash(python -m pytest tests/unit/ tests/integration/ -q)"
     ]
   }
 }

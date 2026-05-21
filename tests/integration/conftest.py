@@ -144,6 +144,57 @@ def assert_neighbor_stable(container: str, min_neighbors: int = 1,
         )
 
 
+def dump_protocol_state(container: str, label: str = "") -> str:
+    """Print detailed ISIS protocol state for a container."""
+    prefix = f"[{container}-{label}]" if label else f"[{container}]"
+    lines = [f"\n{'='*60}", f"{prefix} ISIS Protocol State", f"{'='*60}"]
+
+    nbrs = get_isis_neighbors(container)
+    up_count = sum(1 for n in nbrs if n.get("state") == "Up")
+    lines.append(f"  Neighbors: {len(nbrs)} total, {up_count} Up")
+    for n in nbrs:
+        lines.append(f"    - {n.get('adj','?')} on {n.get('interface','?')} [{n.get('state','?')}]")
+
+    db = get_isis_database(container)
+    areas = db.get("areas", [])
+    if isinstance(areas, list):
+        for area_entry in areas:
+            aname = area_entry.get("area", {}).get("name", "?") if isinstance(area_entry.get("area"), dict) else area_entry.get("area", "?")
+            lines.append(f"  Area: {aname}")
+            for lvl in area_entry.get("levels", []):
+                lsp = lvl.get("lsp", {})
+                lid = lsp.get("id", "")
+                if lid:
+                    lines.append(f"    L{lvl.get('id','?')} LSP: {lid}  seq={lvl.get('seq-number','?')}  hold={lvl.get('holdtime','?')}s  ol={lvl.get('att-p-ol','?')}")
+
+    routes = get_ip_routes(container)
+    isis_routes = [pfx for pfx, infos in routes.items() if any(i.get("protocol") == "isis" for i in infos)] if routes else []
+    lines.append(f"  ISIS Routes: {len(isis_routes)}")
+    for pfx in isis_routes[:8]:
+        lines.append(f"    {pfx}")
+    lines.append(f"{'='*60}\n")
+    summary = "\n".join(lines)
+    print(summary)
+    return summary
+
+
+def assert_topology_healthy():
+    """Verify full topology state before attack tests."""
+    for container in [R1, R2]:
+        nbrs = get_isis_neighbors(container)
+        up = sum(1 for n in nbrs if n.get("state") == "Up")
+        assert up >= 1, f"{container}: need >=1 Up neighbor, got {up}: {nbrs}"
+        db = get_isis_database(container)
+        lsp_cnt = 0
+        for a in db.get("areas", []):
+            for l in a.get("levels", []):
+                if l.get("lsp", {}).get("id"):
+                    lsp_cnt += 1
+        assert lsp_cnt >= 1, f"{container}: need >=1 LSP, got {lsp_cnt}"
+        routes = get_ip_routes(container)
+        assert len(routes) >= 2, f"{container}: need >=2 routes, got {len(routes)}"
+
+
 # ---------------------------------------------------------------------------
 # Topology fixture
 # ---------------------------------------------------------------------------

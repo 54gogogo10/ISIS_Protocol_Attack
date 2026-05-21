@@ -1,9 +1,10 @@
 """Integration tests for ISIS Protocol Attack — Docker FRR topology.
 
-Each attack test verifies:
-  1. Pre-attack state (neighbors Up, LSDB baseline)
-  2. Attack execution (packets sent, content correct)
-  3. Post-attack state (neighbors stable)
+Each attack verifies protocol state before AND after:
+  1. dump protocol state (neighbors, LSDB, routes)
+  2. assert topology healthy
+  3. execute attack
+  4. verify post-attack state
 """
 import pytest
 import time
@@ -16,6 +17,7 @@ from .conftest import (
     get_isis_neighbors, get_isis_database, get_ip_routes,
     find_lsp_in_db, get_lsp_by_sys_id,
     get_neighbor_up_count, assert_neighbor_stable,
+    dump_protocol_state, assert_topology_healthy,
     run_attack_script,
 )
 
@@ -34,11 +36,14 @@ def test_01_containers_running(docker_network):
     for container in [R1, R2, ATTACKER]:
         out = docker_exec(container, ["hostname"])
         assert out.strip(), f"{container} not responding"
+    print("\n>>> Topology containers all running")
 
 
 def test_02_isis_neighbor_up(docker_network):
     assert_neighbor_stable(R1)
     assert_neighbor_stable(R2)
+    dump_protocol_state(R1, "topo-baseline")
+    dump_protocol_state(R2, "topo-baseline")
 
 
 def test_03_isis_database_populated(docker_network):
@@ -53,6 +58,7 @@ def test_04_routes_learned(docker_network):
     routes2 = get_ip_routes(R2)
     assert len(routes1) >= 2, f"R1 has only {len(routes1)} routes"
     assert len(routes2) >= 2, f"R2 has only {len(routes2)} routes"
+    assert_topology_healthy()
 
 
 # ============================================================
@@ -60,8 +66,9 @@ def test_04_routes_learned(docker_network):
 # ============================================================
 
 def test_05_iih_inject(docker_network, attacker):
-    assert_neighbor_stable(R1)
-    assert_neighbor_stable(R2)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-iih-inject")
 
     script = """
 from isis_attack.attacks.adjacency.iih_inject import IIHInjectAttack
@@ -85,7 +92,9 @@ print(f"PACKETS={result.packets_sent}")
 
 
 def test_06_adjacency_break(docker_network, attacker):
-    assert_neighbor_stable(R1)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-adjbreak")
 
     script = """
 from isis_attack.attacks.adjacency.adjacency_break import AdjacencyBreakAttack
@@ -105,7 +114,9 @@ print(f"PACKETS={result.packets_sent}")
 
 
 def test_07_dis_hijack(docker_network, attacker):
-    assert_neighbor_stable(R1)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-dishijack")
 
     script = """
 from isis_attack.attacks.adjacency.dis_hijack import DISHijackAttack
@@ -131,7 +142,9 @@ print(f"PACKETS={result.packets_sent}")
 
 def test_08_route_inject_lsp_correct(docker_network, attacker):
     """Route inject: verify LSP sent with correct fields, neighbor stable."""
-    assert_neighbor_stable(R1)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-routeinject")
 
     script = """
 from isis_attack.attacks.lsp.route_inject import RouteInjectAttack
@@ -172,7 +185,9 @@ assert seq_from_pkt == 0xABCD, f"Seq mismatch: 0x{seq_from_pkt:08X} != 0x0000ABC
 
 def test_09_max_seq_uses_ffffffff(docker_network, attacker):
     """Max-seq: verify LSP built with seq=0xFFFFFFFF."""
-    assert_neighbor_stable(R1)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-maxseq")
 
     script = """
 from isis_attack.attacks.lsp.max_seq import MaxSeqAttack
@@ -206,7 +221,9 @@ assert seq == 0xFFFFFFFF
 
 def test_10_purge_lsp_lifetime_zero(docker_network, attacker):
     """Purge LSP: verify LSP built with lifetime=0."""
-    assert_neighbor_stable(R1)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-purge")
 
     script = """
 from isis_attack.attacks.lsp.purge_lsp import PurgeLSPAttack
@@ -239,8 +256,10 @@ assert lifetime == 0
 
 
 def test_11_overload_bit_on_wire(docker_network, attacker):
-    """Overload bit: verify LSP sent (OL bit in typeblock)."""
-    assert_neighbor_stable(R1)
+    """Overload bit: verify LSP sent."""
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-overload")
 
     script = """
 from isis_attack.attacks.lsp.overload_bit import OverloadBitAttack
@@ -263,7 +282,9 @@ print(f"PACKETS={result.packets_sent}")
 
 def test_12_fight_back_incrementing(docker_network, attacker):
     """Fight-back: verify neighbor survives sustained LSP injection."""
-    assert_neighbor_stable(R1)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-fightback")
 
     script = """
 from isis_attack.attacks.lsp.fight_back import FightBackAttack
@@ -292,8 +313,9 @@ print(f"PACKETS={result.packets_sent}")
 
 def test_13_flood_resilience(docker_network, attacker):
     """Flood: verify neighbors survive packet storm."""
-    assert_neighbor_stable(R1)
-    assert_neighbor_stable(R2)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-flood")
     n1_before = get_neighbor_up_count(R1)
     n2_before = get_neighbor_up_count(R2)
 
@@ -323,7 +345,9 @@ print(f"PACKETS={result.packets_sent}")
 
 def test_14_spf_recalc_sends_lsps(docker_network, attacker):
     """SPF recalc: verify many LSPs sent, neighbor stable."""
-    assert_neighbor_stable(R1)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-spfrecalc")
 
     script = """
 from isis_attack.attacks.dos.spf_recalc import SPFRecalcAttack
@@ -351,7 +375,9 @@ print(f"PACKETS={result.packets_sent}")
 
 def test_15_db_overflow_many_lsps(docker_network, attacker):
     """DB overflow: verify many LSPs sent."""
-    assert_neighbor_stable(R1)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-dboverflow")
 
     script = """
 from isis_attack.attacks.dos.db_overflow import DBOverflowAttack
@@ -383,7 +409,9 @@ print(f"PACKETS={result.packets_sent}")
 
 def test_16_mitm_runs(docker_network, attacker):
     """MITM: verify attack framework runs."""
-    assert_neighbor_stable(R1)
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
+    dump_protocol_state(R1, "pre-mitm")
 
     script = """
 from isis_attack.attacks.protocol.mitm import MITMAttack
@@ -401,6 +429,8 @@ print(f"DETAILS={result.details}")
 
 def test_17_replay_requires_capture_file(docker_network, attacker):
     """Replay: gracefully fails without pcap file."""
+    print("\n>>> Pre-attack: verifying topology")
+    assert_topology_healthy()
 
     script = """
 from isis_attack.attacks.protocol.replay import ReplayAttack
